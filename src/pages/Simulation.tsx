@@ -13,7 +13,7 @@ import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line,
 } from 'recharts';
-import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap } from 'lucide-react';
 
 interface SimulatedProject {
   id: string;
@@ -119,6 +119,42 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
 
   const capacityForChart = hasTeamChanges ? simCapacity : baseCapacity;
 
+  /** Auto-balance: scale each member's quarterly days so total capacity ≈ demand per quarter */
+  const autoBalance = () => {
+    // Sum demand per quarter from monthly demand data
+    const demandQ = [0, 0, 0, 0];
+    for (let m = 0; m < 12; m++) {
+      const q = Math.floor(m / 3);
+      demandQ[q] += demandByMonth[m]?.total || 0;
+    }
+
+    // Sum current capacity per quarter from simTeam
+    const capQ = [0, 0, 0, 0];
+    for (const m of simTeam) {
+      capQ[0] += m.q1Days;
+      capQ[1] += m.q2Days;
+      capQ[2] += m.q3Days;
+      capQ[3] += m.q4Days;
+    }
+
+    // Compute scaling factor per quarter
+    const scales = capQ.map((cap, q) => {
+      if (cap <= 0) return 1; // can't scale from zero
+      return demandQ[q] / cap;
+    });
+
+    // Apply scaling to each member's quarterly days
+    setSimTeam(prev =>
+      prev.map(m => ({
+        ...m,
+        q1Days: Math.round(m.q1Days * scales[0]),
+        q2Days: Math.round(m.q2Days * scales[1]),
+        q3Days: Math.round(m.q3Days * scales[2]),
+        q4Days: Math.round(m.q4Days * scales[3]),
+      })),
+    );
+  };
+
   const addSimProject = (sp: SimulatedProject) => {
     setSimProjects(prev => [...prev, sp]);
   };
@@ -197,14 +233,19 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
       {/* Simulated Team */}
       <div className="sim-header" style={{ marginTop: 24 }}>
         <h3><Users size={18} /> Adjust Team Capacity</h3>
-        {hasTeamChanges && (
-          <button className="btn btn-secondary" onClick={resetSimTeam}>
-            <RotateCcw size={14} /> Reset Team
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" onClick={autoBalance} title="Scale team days so capacity matches demand per quarter">
+            <Zap size={14} /> Auto-balance
           </button>
-        )}
+          {hasTeamChanges && (
+            <button className="btn btn-secondary" onClick={resetSimTeam}>
+              <RotateCcw size={14} /> Reset Team
+            </button>
+          )}
+        </div>
       </div>
       <p className="settings-desc">
-        Edit existing team members or add new ones to simulate capacity changes. Changes here are not saved.
+        Edit existing team members or add new ones to simulate capacity changes. Auto-balance scales each member's quarterly days so total capacity matches demand. You can then adjust manually.
       </p>
       <SimTeamTable
         simTeam={simTeam}
