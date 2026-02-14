@@ -235,7 +235,7 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
         const projectCol = findColumn(headers, ['program', 'programme', 'project', 'name', 'projet']);
 
         // Type column (optional — if missing, all rows are treated as 'unknown')
-        const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
+        const typeCol = findColumn(headers, ['objects', 'object', 'objet', 'objets', 'type', 'category', 'catégorie', 'categorie', 'revenue type']);
 
         // License date columns
         const startDateCol = findColumn(headers, ['date début', 'date debut', 'start date', 'date de début', 'date de debut', 'début', 'debut']);
