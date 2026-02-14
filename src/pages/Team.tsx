@@ -279,6 +279,20 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr>
+                <td><strong>Total ({members.length})</strong></td>
+                <td></td>
+                <td className="right"><strong>{members.reduce((s, m) => s + m.q1Days, 0)}</strong></td>
+                <td className="right"><strong>{members.reduce((s, m) => s + m.q2Days, 0)}</strong></td>
+                <td className="right"><strong>{members.reduce((s, m) => s + m.q3Days, 0)}</strong></td>
+                <td className="right"><strong>{members.reduce((s, m) => s + m.q4Days, 0)}</strong></td>
+                <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0)}</strong></td>
+                <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0) > 0 ? formatCurrency(Math.round(enriched.reduce((s, m) => s + m.totalCost, 0) / enriched.reduce((s, m) => s + m.totalDays, 0))) : '\u2014'}</strong></td>
+                <td className="right"><strong>{formatCurrency(enriched.reduce((s, m) => s + m.totalCost, 0))}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
   );
