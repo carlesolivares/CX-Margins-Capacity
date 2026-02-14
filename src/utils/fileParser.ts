@@ -290,6 +290,10 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
             if (invoiceDate) {
               rowStartDate = delayDays > 0 ? subtractDays(invoiceDate, delayDays) : invoiceDate;
               rowEndDate = addMonths(rowStartDate, 4);
+            } else if (startDateCol !== -1) {
+              // Fallback: use Date début as start, compute end = start + 4 months
+              rowStartDate = parseDate(row[startDateCol]);
+              rowEndDate = rowStartDate ? addMonths(rowStartDate, 4) : '';
             }
           }
 

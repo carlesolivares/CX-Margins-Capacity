@@ -4,7 +4,7 @@ import { parseRevenueFileDetailed } from '../utils/fileParser';
 import { FileUpload } from '../components/FileUpload';
 import { formatCurrency } from '../utils/margins';
 import { Receipt, Trash2, Filter } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface RevenueProps {
   revenueItems: RevenueLineItem[];
@@ -45,6 +45,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('account');
   const [sortAsc, setSortAsc] = useState(true);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   const handleFile = async (file: File) => {
     const parsed = await parseRevenueFileDetailed(file);
@@ -229,25 +230,55 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
             </div>
           </div>
 
-          {years.length > 0 && (
-            <div className="chart-container chart-full-width">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={years.map(y => ({ year: String(y), amount: yearTotals.byYear[y] || 0 }))}
-                  margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="year" tick={{ fontSize: 13 }} />
-                  <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} width={90} />
-                  <Tooltip formatter={(value) => [formatCurrency(value as number), 'Revenue']} />
-                  <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
-                Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
+          {years.length > 0 && (() => {
+            const chartData = years.map(y => ({ year: String(y), yearNum: y, amount: yearTotals.byYear[y] || 0 }));
+            return (
+              <div className="chart-container chart-full-width">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="year" tick={{ fontSize: 13 }} />
+                    <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} width={90} />
+                    <Tooltip formatter={(value) => [formatCurrency(value as number), 'Revenue']} />
+                    <Bar
+                      dataKey="amount"
+                      radius={[4, 4, 0, 0]}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(_, index) => {
+                        const yr = chartData[index]?.yearNum;
+                        if (yr != null) setSelectedYear(prev => prev === yr ? null : yr);
+                      }}
+                    >
+                      {chartData.map((entry) => (
+                        <Cell
+                          key={entry.year}
+                          fill={selectedYear === entry.yearNum ? '#4338ca' : '#6366f1'}
+                          opacity={selectedYear && selectedYear !== entry.yearNum ? 0.4 : 1}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                  Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
+                  {selectedYear && (
+                    <span style={{ marginLeft: 16 }}>
+                      {selectedYear}: <strong>{formatCurrency(yearTotals.byYear[selectedYear] || 0)}</strong>
+                      <button
+                        onClick={() => setSelectedYear(null)}
+                        style={{ marginLeft: 8, background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 13 }}
+                      >
+                        (clear)
+                      </button>
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {view === 'detail' ? (
             <div className="table-wrapper">
@@ -260,7 +291,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                     <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
                     <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
                     {years.map(y => (
-                      <th key={y} className="right" onClick={() => toggleSort(y)}>
+                      <th key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`} onClick={() => toggleSort(y)}>
                         {y}{indicator(y)}
                       </th>
                     ))}
@@ -278,7 +309,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                       {years.map(y => {
                         const val = row.yearAmounts[y] || 0;
                         return (
-                          <td key={y} className="right">
+                          <td key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`}>
                             {val > 0 ? formatCurrency(val) : '—'}
                           </td>
                         );
@@ -295,7 +326,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                     <td></td>
                     <td></td>
                     {years.map(y => (
-                      <td key={y} className="right">
+                      <td key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`}>
                         <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
                       </td>
                     ))}
@@ -313,7 +344,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                     <th onClick={() => toggleSort('project')}>Program{indicator('project')}</th>
                     <th className="right" onClick={() => toggleSort('lines')}>Lines{indicator('lines')}</th>
                     {years.map(y => (
-                      <th key={y} className="right" onClick={() => toggleSort(y)}>
+                      <th key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`} onClick={() => toggleSort(y)}>
                         {y}{indicator(y)}
                       </th>
                     ))}
@@ -329,7 +360,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                       {years.map(y => {
                         const val = row.yearAmounts[y] || 0;
                         return (
-                          <td key={y} className="right">
+                          <td key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`}>
                             {val > 0 ? formatCurrency(val) : '—'}
                           </td>
                         );
@@ -344,7 +375,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                     <td></td>
                     <td className="right"><strong>{displayRows.length}</strong></td>
                     {years.map(y => (
-                      <td key={y} className="right">
+                      <td key={y} className={`right${selectedYear === y ? ' col-highlight' : ''}`}>
                         <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
                       </td>
                     ))}

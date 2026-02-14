@@ -423,6 +423,9 @@
   border-top: 2px solid var(--color-border);
 }
 
+.col-highlight {
+  background: rgba(99, 102, 241, 0.1) !important;
+}
 
 .customer-name {
   font-weight: 600;
