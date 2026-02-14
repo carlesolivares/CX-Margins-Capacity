@@ -87,7 +87,7 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
 
   // Global margin KPIs
   const deployProjects = deployProjections.filter(p => p.deployRevenue > 0);
-  const runProjects = adjustedProjections.filter(p => p.runRevenue > 0);
+  const runProjects = adjustedProjections.filter(p => p.runRevenue > 0 && phase1ProjectIds.has(p.id));
 
   const totalDeployRev = deployProjects.reduce((s, p) => s + p.deployRevenue, 0);
   const totalDeployProjected = deployProjects.reduce((s, p) => s + p.deployProjected, 0);
@@ -204,21 +204,21 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
             threshold={targets.deployMargin}
           />
 
-          {/* RUN Projection */}
+          {/* RUN Projection (Phase 1 only) */}
           <div className="sim-header">
-            <h3>RUN &mdash; Projected Margin</h3>
-            {phase1ProjectIds.size > 0 && (
+            <h3>RUN &mdash; Projected Margin (Phase 1)</h3>
+            {runProjects.length > 0 && (
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowOverridePanel(o => !o)}
               >
                 <SlidersHorizontal size={14} />
-                {showOverridePanel ? 'Hide' : 'Adjust'} Phase 1 RUN Margin
+                {showOverridePanel ? 'Hide' : 'Adjust'} RUN Margin
               </button>
             )}
           </div>
 
-          {showOverridePanel && phase1ProjectIds.size > 0 && (
+          {showOverridePanel && runProjects.length > 0 && (
             <RunMarginOverridePanel
               projections={adjustedProjections}
               phase1Ids={phase1ProjectIds}
@@ -232,14 +232,12 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
           )}
 
           <ProjectionChart
-            projections={adjustedProjections}
+            projections={adjustedProjections.filter(p => phase1ProjectIds.has(p.id))}
             type="run"
             threshold={targets.runMargin}
             onBarClick={(id) => {
-              if (phase1ProjectIds.has(id)) {
-                setShowOverridePanel(true);
-                setHighlightedProjectId(id);
-              }
+              setShowOverridePanel(true);
+              setHighlightedProjectId(id);
             }}
           />
 
