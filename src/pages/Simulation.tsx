@@ -122,7 +122,8 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
   const MAX_JH_PER_QUARTER = 55;
   const ADJUSTABLE_ROLES: Role[] = ['Dev', 'FDE'];
 
-  /** Auto-balance: adjust Dev & FDE so capacity ≈ demand, protect past JH, cap 55 JH/person/quarter */
+  /** Auto-balance: adjust Dev & FDE so capacity ≈ demand, protect past JH, cap 55 JH/person/quarter.
+   *  When reducing, prioritize zeroing out whole people rather than spreading thin reductions. */
   const autoBalance = () => {
     const today = new Date();
     const currentQ = Math.floor(today.getMonth() / 3); // 0-based: 0=Q1, 1=Q2…
@@ -142,56 +143,100 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
       demandQ[q] += demandByMonth[m]?.total || 0;
     }
 
-    // Sum current capacity per quarter, split by adjustable vs non-adjustable
+    // Sum capacity from non-adjustable roles per quarter
     const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
-    const nonAdjCapQ = [0, 0, 0, 0]; // capacity from roles we don't touch
-    const adjCapQ = [0, 0, 0, 0];    // capacity from Dev & FDE
+    const nonAdjCapQ = [0, 0, 0, 0];
     for (const m of simTeam) {
-      const isAdj = ADJUSTABLE_ROLES.includes(m.role);
-      const target = isAdj ? adjCapQ : nonAdjCapQ;
-      target[0] += m.q1Days;
-      target[1] += m.q2Days;
-      target[2] += m.q3Days;
-      target[3] += m.q4Days;
+      if (!ADJUSTABLE_ROLES.includes(m.role)) {
+        nonAdjCapQ[0] += m.q1Days;
+        nonAdjCapQ[1] += m.q2Days;
+        nonAdjCapQ[2] += m.q3Days;
+        nonAdjCapQ[3] += m.q4Days;
+      }
     }
 
-    // For each quarter, compute how much Dev & FDE capacity is needed
-    // so that nonAdj + newAdj = demand
+    // Target adjustable capacity per quarter
     const targetAdjCapQ = demandQ.map((d, q) => Math.max(0, d - nonAdjCapQ[q]));
 
-    const adjustableMembers = simTeam.filter(m => ADJUSTABLE_ROLES.includes(m.role));
-    const adjustableCount = adjustableMembers.length;
-    if (adjustableCount === 0) return;
+    const adjustableIds = simTeam
+      .filter(m => ADJUSTABLE_ROLES.includes(m.role))
+      .map(m => m.id);
+    if (adjustableIds.length === 0) return;
+
+    // Build a map of new values: memberId -> { q1Days, q2Days, q3Days, q4Days }
+    const newValues: Record<string, Record<string, number>> = {};
+    for (const id of adjustableIds) {
+      const m = simTeam.find(t => t.id === id)!;
+      newValues[id] = { q1Days: m.q1Days, q2Days: m.q2Days, q3Days: m.q3Days, q4Days: m.q4Days };
+    }
+
+    // For each quarter, distribute the target across adjustable members.
+    // Strategy: fill the busiest members first (up to MAX), zero out the rest.
+    for (let q = 0; q < 4; q++) {
+      const key = qKeys[q];
+
+      if (q < currentQ) continue; // past quarter: frozen
+
+      // Sort by current days descending — keep the busiest, zero out least busy first
+      const sorted = [...adjustableIds].sort((a, b) => {
+        const aVal = simTeam.find(t => t.id === a)![key];
+        const bVal = simTeam.find(t => t.id === b)![key];
+        return bVal - aVal;
+      });
+
+      if (q === currentQ) {
+        // Current quarter: each member's frozen portion is locked
+        let frozenTotal = 0;
+        const frozenPerMember: Record<string, number> = {};
+        for (const id of sorted) {
+          const currentVal = simTeam.find(t => t.id === id)![key];
+          const frozenJH = currentVal * frozenPct;
+          frozenPerMember[id] = frozenJH;
+          frozenTotal += frozenJH;
+        }
+
+        // Budget left to distribute after frozen portions
+        let remaining = Math.max(0, targetAdjCapQ[q] - frozenTotal);
+
+        for (const id of sorted) {
+          const frozen = frozenPerMember[id];
+          if (remaining <= 0) {
+            // No more budget — keep only frozen portion
+            newValues[id][key] = Math.round(Math.max(0, frozen));
+          } else {
+            const headroom = MAX_JH_PER_QUARTER - frozen;
+            const give = Math.min(headroom, remaining);
+            newValues[id][key] = Math.round(Math.max(0, Math.min(MAX_JH_PER_QUARTER, frozen + give)));
+            remaining -= give;
+          }
+        }
+      } else {
+        // Future quarters: fill busiest first, zero out the rest
+        let remaining = targetAdjCapQ[q];
+
+        for (const id of sorted) {
+          if (remaining <= 0) {
+            newValues[id][key] = 0;
+          } else {
+            const give = Math.min(MAX_JH_PER_QUARTER, remaining);
+            newValues[id][key] = Math.round(give);
+            remaining -= give;
+          }
+        }
+      }
+    }
 
     setSimTeam(prev =>
       prev.map(m => {
         if (!ADJUSTABLE_ROLES.includes(m.role)) return m;
-
-        const updated = { ...m };
-        for (let q = 0; q < 4; q++) {
-          const key = qKeys[q];
-          const currentVal = m[key];
-
-          if (q < currentQ) {
-            // Past quarter: fully frozen, keep as-is
-            continue;
-          }
-
-          // Target per person = total adjustable target / number of adjustable members
-          const targetPerPerson = targetAdjCapQ[q] / adjustableCount;
-          let proposed = targetPerPerson;
-
-          if (q === currentQ) {
-            // Current quarter: frozen portion stays, only adjust the remaining part
-            const frozenJH = currentVal * frozenPct;
-            const remainingTarget = Math.max(0, targetPerPerson - frozenJH);
-            proposed = frozenJH + remainingTarget;
-          }
-
-          // Cap at max 55 JH per person per quarter, floor at 0
-          updated[key] = Math.round(Math.max(0, Math.min(MAX_JH_PER_QUARTER, proposed)));
-        }
-        return updated;
+        const vals = newValues[m.id];
+        return {
+          ...m,
+          q1Days: vals.q1Days,
+          q2Days: vals.q2Days,
+          q3Days: vals.q3Days,
+          q4Days: vals.q4Days,
+        };
       }),
     );
   };
