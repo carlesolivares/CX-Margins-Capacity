@@ -193,90 +193,96 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
             </div>
           </div>
 
-          {years.length > 0 && (
-            <div className="chart-container chart-full-width">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={years.map(y => ({ year: String(y), amount: yearTotals.byYear[y] || 0 }))}
-                  margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="year" tick={{ fontSize: 13 }} />
-                  <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} width={90} />
-                  <Tooltip formatter={(value) => [formatCurrency(value as number), isLicenses ? 'Licenses' : 'Setup']} />
-                  <Bar dataKey="amount" fill={isLicenses ? '#6366f1' : '#10b981'} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
-                Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
-              </div>
+          {aggregated.length === 0 ? (
+            <div className="empty-state">
+              No {isLicenses ? 'license' : 'setup'} entries found. Try switching to {isLicenses ? 'Setup' : 'Licenses'}.
             </div>
-          )}
+          ) : (
+            <>
+              {years.length > 0 && (
+                <div className="chart-container chart-full-width">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={years.map(y => ({ year: String(y), amount: yearTotals.byYear[y] || 0 }))}
+                      margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="year" tick={{ fontSize: 13 }} />
+                      <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(value) => [formatCurrency(value as number), isLicenses ? 'Licenses' : 'Setup']} />
+                      <Bar dataKey="amount" fill={isLicenses ? '#6366f1' : '#10b981'} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                    Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
+                  </div>
+                </div>
+              )}
 
-          {aggregated.length > 0 && (
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
-                    <th onClick={() => toggleSort('project')}>Project{indicator('project')}</th>
-                    {isLicenses && (
-                      <>
-                        <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
-                        <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
-                      </>
-                    )}
-                    {years.map(y => (
-                      <th key={y} className="right" onClick={() => toggleSort(y)}>
-                        {y}{indicator(y)}
-                      </th>
-                    ))}
-                    <th className="right" onClick={() => toggleSort('total')}>Total{indicator('total')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((row, i) => (
-                    <tr key={i}>
-                      <td className="customer-name">{row.account}</td>
-                      <td>{row.project || '—'}</td>
+              <div className="table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
+                      <th onClick={() => toggleSort('project')}>Project{indicator('project')}</th>
                       {isLicenses && (
                         <>
-                          <td className="date-cell">{row.startDate || '—'}</td>
-                          <td className="date-cell">{row.endDate || '—'}</td>
+                          <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
+                          <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
                         </>
                       )}
-                      {years.map(y => {
-                        const val = row.yearAmounts[y] || 0;
-                        return (
-                          <td key={y} className="right">
-                            {val > 0 ? formatCurrency(val) : '—'}
-                          </td>
-                        );
-                      })}
-                      <td className="right"><strong>{formatCurrency(row.total)}</strong></td>
+                      {years.map(y => (
+                        <th key={y} className="right" onClick={() => toggleSort(y)}>
+                          {y}{indicator(y)}
+                        </th>
+                      ))}
+                      <th className="right" onClick={() => toggleSort('total')}>Total{indicator('total')}</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td><strong>Total</strong></td>
-                    <td></td>
-                    {isLicenses && (
-                      <>
-                        <td></td>
-                        <td></td>
-                      </>
-                    )}
-                    {years.map(y => (
-                      <td key={y} className="right">
-                        <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
-                      </td>
+                  </thead>
+                  <tbody>
+                    {sorted.map((row, i) => (
+                      <tr key={i}>
+                        <td className="customer-name">{row.account}</td>
+                        <td>{row.project || '—'}</td>
+                        {isLicenses && (
+                          <>
+                            <td className="date-cell">{row.startDate || '—'}</td>
+                            <td className="date-cell">{row.endDate || '—'}</td>
+                          </>
+                        )}
+                        {years.map(y => {
+                          const val = row.yearAmounts[y] || 0;
+                          return (
+                            <td key={y} className="right">
+                              {val > 0 ? formatCurrency(val) : '—'}
+                            </td>
+                          );
+                        })}
+                        <td className="right"><strong>{formatCurrency(row.total)}</strong></td>
+                      </tr>
                     ))}
-                    <td className="right"><strong>{formatCurrency(yearTotals.grandTotal)}</strong></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td><strong>Total</strong></td>
+                      <td></td>
+                      {isLicenses && (
+                        <>
+                          <td></td>
+                          <td></td>
+                        </>
+                      )}
+                      {years.map(y => (
+                        <td key={y} className="right">
+                          <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
+                        </td>
+                      ))}
+                      <td className="right"><strong>{formatCurrency(yearTotals.grandTotal)}</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
           )}
         </>
       )}
