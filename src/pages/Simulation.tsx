@@ -122,7 +122,7 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
   const MAX_JH_PER_QUARTER = 55;
   const ADJUSTABLE_ROLES: Role[] = ['Dev', 'FDE'];
 
-  /** Auto-balance: add capacity only via Dev & FDE, protect past JH, cap at 55 JH/person/quarter */
+  /** Auto-balance: adjust Dev & FDE so capacity ≈ demand, protect past JH, cap 55 JH/person/quarter */
   const autoBalance = () => {
     const today = new Date();
     const currentQ = Math.floor(today.getMonth() / 3); // 0-based: 0=Q1, 1=Q2…
@@ -130,7 +130,7 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
     // Fraction of the current quarter already elapsed (frozen)
     const qStartMonth = currentQ * 3;
     const qStart = new Date(today.getFullYear(), qStartMonth, 1);
-    const qEnd = new Date(today.getFullYear(), qStartMonth + 3, 0); // last day of quarter
+    const qEnd = new Date(today.getFullYear(), qStartMonth + 3, 0);
     const totalQDays = (qEnd.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24) + 1;
     const elapsedQDays = (today.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24) + 1;
     const frozenPct = Math.min(1, elapsedQDays / totalQDays);
@@ -142,44 +142,54 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
       demandQ[q] += demandByMonth[m]?.total || 0;
     }
 
-    // Sum current capacity per quarter
+    // Sum current capacity per quarter, split by adjustable vs non-adjustable
     const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
-    const capQ = [0, 0, 0, 0];
+    const nonAdjCapQ = [0, 0, 0, 0]; // capacity from roles we don't touch
+    const adjCapQ = [0, 0, 0, 0];    // capacity from Dev & FDE
     for (const m of simTeam) {
-      capQ[0] += m.q1Days;
-      capQ[1] += m.q2Days;
-      capQ[2] += m.q3Days;
-      capQ[3] += m.q4Days;
+      const isAdj = ADJUSTABLE_ROLES.includes(m.role);
+      const target = isAdj ? adjCapQ : nonAdjCapQ;
+      target[0] += m.q1Days;
+      target[1] += m.q2Days;
+      target[2] += m.q3Days;
+      target[3] += m.q4Days;
     }
 
-    // Calculate deficit per quarter (only positive = need more capacity)
-    const deficitQ = demandQ.map((d, q) => Math.max(0, d - capQ[q]));
+    // For each quarter, compute how much Dev & FDE capacity is needed
+    // so that nonAdj + newAdj = demand
+    const targetAdjCapQ = demandQ.map((d, q) => Math.max(0, d - nonAdjCapQ[q]));
 
-    // For current quarter, only the remaining portion can be adjusted
-    if (currentQ >= 0 && currentQ < 4) {
-      deficitQ[currentQ] = Math.max(0, deficitQ[currentQ] * (1 - frozenPct));
-    }
-    // Past quarters: no adjustment possible
-    for (let q = 0; q < currentQ; q++) {
-      deficitQ[q] = 0;
-    }
-
-    // Distribute deficit across Dev & FDE members only
     const adjustableMembers = simTeam.filter(m => ADJUSTABLE_ROLES.includes(m.role));
     const adjustableCount = adjustableMembers.length;
-
-    if (adjustableCount === 0) return; // nothing to adjust
+    if (adjustableCount === 0) return;
 
     setSimTeam(prev =>
       prev.map(m => {
-        if (!ADJUSTABLE_ROLES.includes(m.role)) return m; // non-adjustable roles unchanged
+        if (!ADJUSTABLE_ROLES.includes(m.role)) return m;
 
         const updated = { ...m };
         for (let q = 0; q < 4; q++) {
           const key = qKeys[q];
-          const extraPerPerson = deficitQ[q] / adjustableCount;
-          const proposed = m[key] + extraPerPerson;
-          updated[key] = Math.round(Math.min(MAX_JH_PER_QUARTER, proposed));
+          const currentVal = m[key];
+
+          if (q < currentQ) {
+            // Past quarter: fully frozen, keep as-is
+            continue;
+          }
+
+          // Target per person = total adjustable target / number of adjustable members
+          const targetPerPerson = targetAdjCapQ[q] / adjustableCount;
+          let proposed = targetPerPerson;
+
+          if (q === currentQ) {
+            // Current quarter: frozen portion stays, only adjust the remaining part
+            const frozenJH = currentVal * frozenPct;
+            const remainingTarget = Math.max(0, targetPerPerson - frozenJH);
+            proposed = frozenJH + remainingTarget;
+          }
+
+          // Cap at max 55 JH per person per quarter, floor at 0
+          updated[key] = Math.round(Math.max(0, Math.min(MAX_JH_PER_QUARTER, proposed)));
         }
         return updated;
       }),
