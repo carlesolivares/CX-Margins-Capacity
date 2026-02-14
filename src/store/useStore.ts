@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
 import { DEFAULT_TARGETS } from '../types';
 
 const PROJECTS_KEY = 'cx-app-projects-v2';
 const TEAM_KEY = 'cx-app-team';
 const TARGETS_KEY = 'cx-app-targets';
+const TOGGLES_KEY = 'cx-app-project-toggles';
+
+export interface ProjectToggle {
+  deploy: boolean;
+  run: boolean;
+}
 
 function load<T>(key: string): T[] {
   try {
@@ -78,4 +84,43 @@ export function useTargets() {
   }, []);
 
   return { targets, updateTargets };
+}
+
+export function useProjectToggles(projects: ProjectRow[]) {
+  const [toggles, setToggles] = useState<Record<string, ProjectToggle>>(() => {
+    try {
+      const raw = localStorage.getItem(TOGGLES_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(TOGGLES_KEY, JSON.stringify(toggles));
+  }, [toggles]);
+
+  const setToggle = useCallback((id: string, toggle: ProjectToggle) => {
+    setToggles(prev => ({ ...prev, [id]: toggle }));
+  }, []);
+
+  const getToggle = useCallback((id: string): ProjectToggle => {
+    return toggles[id] ?? { deploy: true, run: true };
+  }, [toggles]);
+
+  // Projects with toggled-off revenue/conso zeroed out
+  const filteredProjects = useMemo(() => {
+    return projects.map(p => {
+      const t = toggles[p.id] ?? { deploy: true, run: true };
+      return {
+        ...p,
+        deployRevenue: t.deploy ? p.deployRevenue : 0,
+        deployConso: t.deploy ? p.deployConso : 0,
+        runRevenue: t.run ? p.runRevenue : 0,
+        runConso: t.run ? p.runConso : 0,
+      };
+    });
+  }, [projects, toggles]);
+
+  return { toggles, setToggle, getToggle, filteredProjects };
 }

@@ -407,6 +407,14 @@
   text-align: right;
 }
 
+.data-table .center {
+  text-align: center;
+}
+
+.data-table .row-dimmed td {
+  opacity: 0.4;
+}
+
 .data-table tfoot {
   background: var(--color-bg);
 }

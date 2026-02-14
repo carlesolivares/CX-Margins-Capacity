@@ -1,14 +1,18 @@
-import { useState } from 'react';
-import type { Targets } from '../types';
+import { useState, useMemo } from 'react';
+import type { Targets, ProjectRow } from '../types';
 import { DEFAULT_TARGETS } from '../types';
-import { Settings as SettingsIcon, RotateCcw, Info } from 'lucide-react';
+import type { ProjectToggle } from '../store/useStore';
+import { Settings as SettingsIcon, RotateCcw, Info, Filter } from 'lucide-react';
 
 interface SettingsProps {
   targets: Targets;
   updateTargets: (t: Targets) => void;
+  projects?: ProjectRow[];
+  getToggle?: (id: string) => ProjectToggle;
+  setToggle?: (id: string, toggle: ProjectToggle) => void;
 }
 
-export function Settings({ targets, updateTargets }: SettingsProps) {
+export function Settings({ targets, updateTargets, projects = [], getToggle, setToggle }: SettingsProps) {
   const [deploy, setDeploy] = useState(targets.deployMargin);
   const [run, setRun] = useState(targets.runMargin);
 
@@ -105,6 +109,21 @@ export function Settings({ targets, updateTargets }: SettingsProps) {
         </div>
       </div>
 
+      {/* Project Toggles */}
+      {projects.length > 0 && getToggle && setToggle && (
+        <div className="settings-section" style={{ marginTop: 24 }}>
+          <h3><Filter size={18} /> Project Scope</h3>
+          <p className="settings-desc">
+            Toggle Deploy and/or RUN per project. Only active phases are included in reports, projections, simulations, and dashboards.
+          </p>
+          <ProjectToggleTable
+            projects={projects}
+            getToggle={getToggle}
+            setToggle={setToggle}
+          />
+        </div>
+      )}
+
       {/* Assumptions section */}
       <div className="settings-section" style={{ marginTop: 24 }}>
         <h3><Info size={18} /> Assumptions</h3>
@@ -151,5 +170,93 @@ export function Settings({ targets, updateTargets }: SettingsProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ProjectToggleTable({ projects, getToggle, setToggle }: {
+  projects: ProjectRow[];
+  getToggle: (id: string) => ProjectToggle;
+  setToggle: (id: string, toggle: ProjectToggle) => void;
+}) {
+  const [filter, setFilter] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!filter) return projects;
+    const q = filter.toLowerCase();
+    return projects.filter(p =>
+      p.account.toLowerCase().includes(q) || p.project.toLowerCase().includes(q)
+    );
+  }, [projects, filter]);
+
+  const allDeployOn = filtered.every(p => getToggle(p.id).deploy);
+  const allRunOn = filtered.every(p => getToggle(p.id).run);
+
+  const toggleAllDeploy = (on: boolean) => {
+    for (const p of filtered) {
+      const t = getToggle(p.id);
+      setToggle(p.id, { ...t, deploy: on });
+    }
+  };
+  const toggleAllRun = (on: boolean) => {
+    for (const p of filtered) {
+      const t = getToggle(p.id);
+      setToggle(p.id, { ...t, run: on });
+    }
+  };
+
+  return (
+    <>
+      <input
+        type="text"
+        className="input"
+        placeholder="Filter by account or project..."
+        value={filter}
+        onChange={e => setFilter(e.target.value)}
+        style={{ marginBottom: 12, maxWidth: 400 }}
+      />
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Project</th>
+              <th className="center" style={{ cursor: 'pointer' }} onClick={() => toggleAllDeploy(!allDeployOn)}>
+                Deploy {allDeployOn ? '\u2611' : '\u2610'}
+              </th>
+              <th className="center" style={{ cursor: 'pointer' }} onClick={() => toggleAllRun(!allRunOn)}>
+                RUN {allRunOn ? '\u2611' : '\u2610'}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(p => {
+              const t = getToggle(p.id);
+              return (
+                <tr key={p.id} className={!t.deploy && !t.run ? 'row-dimmed' : ''}>
+                  <td className="customer-name">{p.account}</td>
+                  <td>{p.project || '\u2014'}</td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={t.deploy}
+                      onChange={e => setToggle(p.id, { ...t, deploy: e.target.checked })}
+                      disabled={p.deployRevenue <= 0}
+                    />
+                  </td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={t.run}
+                      onChange={e => setToggle(p.id, { ...t, run: e.target.checked })}
+                      disabled={p.runRevenue <= 0}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

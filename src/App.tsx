@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProjectData, useTeamMembers, useTargets } from './store/useStore';
+import { useProjectData, useTeamMembers, useTargets, useProjectToggles } from './store/useStore';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
 import { Team } from './pages/Team';
@@ -18,6 +18,7 @@ function App() {
   const { projects, importProjects, clearProjects, deleteProject } = useProjectData();
   const { members, addMember, updateMember, deleteMember, clearMembers } = useTeamMembers();
   const { targets, updateTargets } = useTargets();
+  const { setToggle, getToggle, filteredProjects } = useProjectToggles(projects);
 
   return (
     <div className="app">
@@ -104,7 +105,7 @@ function App() {
         </ul>
       </nav>
       <main className="main-content">
-        {page === 'dashboard' && <Dashboard projects={projects} members={members} targets={targets} />}
+        {page === 'dashboard' && <Dashboard projects={filteredProjects} members={members} targets={targets} />}
         {page === 'projects' && (
           <Projects
             projects={projects}
@@ -123,11 +124,19 @@ function App() {
             clearMembers={clearMembers}
           />
         )}
-        {page === 'planning' && <Planning projects={projects} />}
-        {page === 'simulation' && <Simulation projects={projects} members={members} targets={targets} />}
-        {page === 'projection' && <Projection projects={projects} members={members} targets={targets} />}
-        {page === 'report' && <Report projects={projects} members={members} targets={targets} />}
-        {page === 'settings' && <Settings targets={targets} updateTargets={updateTargets} />}
+        {page === 'planning' && <Planning projects={filteredProjects} />}
+        {page === 'simulation' && <Simulation projects={filteredProjects} members={members} targets={targets} />}
+        {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} />}
+        {page === 'report' && <Report projects={filteredProjects} members={members} targets={targets} />}
+        {page === 'settings' && (
+          <Settings
+            targets={targets}
+            updateTargets={updateTargets}
+            projects={projects}
+            getToggle={getToggle}
+            setToggle={setToggle}
+          />
+        )}
       </main>
     </div>
   );
