@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProjectData, useTeamMembers, useTargets, useProjectToggles } from './store/useStore';
+import { useProjectData, useTeamMembers, useTargets, useProjectToggles, useRevenueData } from './store/useStore';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
 import { Team } from './pages/Team';
@@ -8,10 +8,11 @@ import { Simulation } from './pages/Simulation';
 import { Projection } from './pages/Projection';
 import { Settings } from './pages/Settings';
 import { Report } from './pages/Report';
-import { LayoutDashboard, FolderOpen, Users, CalendarRange, SlidersHorizontal, TrendingUp, FileText, Settings as SettingsIcon } from 'lucide-react';
+import { Revenue } from './pages/Revenue';
+import { LayoutDashboard, FolderOpen, Users, CalendarRange, SlidersHorizontal, TrendingUp, FileText, Receipt, Settings as SettingsIcon } from 'lucide-react';
 import './App.css';
 
-type Page = 'dashboard' | 'projects' | 'team' | 'planning' | 'simulation' | 'projection' | 'report' | 'settings';
+type Page = 'dashboard' | 'projects' | 'team' | 'planning' | 'simulation' | 'projection' | 'revenue' | 'report' | 'settings';
 
 function App() {
   const [page, setPage] = useState<Page>('dashboard');
@@ -19,6 +20,7 @@ function App() {
   const { members, addMember, updateMember, deleteMember, clearMembers } = useTeamMembers();
   const { targets, updateTargets } = useTargets();
   const { setToggle, getToggle, filteredProjects } = useProjectToggles(projects);
+  const { revenueItems, importRevenue, clearRevenue } = useRevenueData();
 
   return (
     <div className="app">
@@ -77,6 +79,16 @@ function App() {
           </li>
           <li>
             <button
+              className={`nav-item ${page === 'revenue' ? 'active' : ''}`}
+              onClick={() => setPage('revenue')}
+            >
+              <Receipt size={18} />
+              Revenue
+              {revenueItems.length > 0 && <span className="nav-badge">{revenueItems.length}</span>}
+            </button>
+          </li>
+          <li>
+            <button
               className={`nav-item ${page === 'simulation' ? 'active' : ''}`}
               onClick={() => setPage('simulation')}
             >
@@ -128,6 +140,13 @@ function App() {
         {page === 'planning' && <Planning projects={filteredProjects} />}
         {page === 'simulation' && <Simulation projects={filteredProjects} members={members} targets={targets} />}
         {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} />}
+        {page === 'revenue' && (
+          <Revenue
+            revenueItems={revenueItems}
+            importRevenue={importRevenue}
+            clearRevenue={clearRevenue}
+          />
+        )}
         {page === 'report' && <Report projects={filteredProjects} members={members} targets={targets} />}
         {page === 'settings' && (
           <Settings

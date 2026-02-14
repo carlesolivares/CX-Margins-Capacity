@@ -158,6 +158,112 @@ export interface RevenueEntry {
   runRevenue: number;
 }
 
+/** Detailed revenue line with per-year breakdown */
+export interface RevenueLineItem {
+  account: string;
+  project: string;
+  type: 'deploy' | 'run' | 'unknown';
+  yearAmounts: Record<number, number>; // year → amount
+}
+
+/** Detect all year columns in headers (matching patterns like "ca 2025", "2026", "revenue 2027", etc.) */
+function detectYearColumns(headers: string[]): { colIndex: number; year: number }[] {
+  const result: { colIndex: number; year: number }[] = [];
+  const yearRe = /\b(20[2-3]\d)\b/; // matches years 2020-2039
+  for (let i = 0; i < headers.length; i++) {
+    const nh = normalize(headers[i]);
+    // Exclude columns that are clearly not revenue
+    if (nh.includes('conso') || nh.includes('consumed') || nh.includes('cost')) continue;
+    const m = nh.match(yearRe);
+    if (m) {
+      result.push({ colIndex: i, year: parseInt(m[1], 10) });
+    }
+  }
+  return result;
+}
+
+function classifyType(type: string): 'deploy' | 'run' | 'unknown' {
+  const t = normalize(type);
+  if (t.includes('license') || t.includes('licence') || t.includes('run') || t.includes('maintenance') || t.includes('support')) {
+    return 'run';
+  }
+  if (t.includes('setup') || t.includes('deploy') || t.includes('implementation') || t.includes('install') || t.includes('project')) {
+    return 'deploy';
+  }
+  return 'unknown';
+}
+
+/** Parse revenue file into detailed per-year line items, grouped by account+project+type */
+export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        if (rows.length < 2) {
+          reject(new Error('File must have at least a header row and one data row'));
+          return;
+        }
+
+        const headers = (rows[0] as string[]).map(h => (h || '').toString());
+
+        const accountCol = findColumn(headers, ['account', 'accounts', 'program', 'programme', 'customer', 'client', 'compte']);
+        if (accountCol === -1) { reject(new Error('Could not find account/program column')); return; }
+
+        const projectCol = findColumn(headers, ['project', 'name', 'projet']);
+
+        const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
+        if (typeCol === -1) { reject(new Error('Could not find "type" column (expected: type, category)')); return; }
+
+        const yearCols = detectYearColumns(headers);
+        if (yearCols.length === 0) {
+          reject(new Error('Could not find any year columns (expected columns with years like 2025, 2026, 2027...)'));
+          return;
+        }
+
+        // Aggregate by account+project+type
+        const map = new Map<string, RevenueLineItem>();
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i] as unknown[];
+          if (!row || row.length === 0) continue;
+
+          const rawAccount = (row[accountCol] || '').toString().trim();
+          const account = cleanAccountName(rawAccount);
+          if (!account) continue;
+
+          const project = projectCol !== -1 ? (row[projectCol] || '').toString().trim() : '';
+          const typeRaw = (row[typeCol] || '').toString();
+          const type = classifyType(typeRaw);
+
+          const key = `${account}|||${project}|||${type}`;
+          if (!map.has(key)) {
+            map.set(key, { account, project, type, yearAmounts: {} });
+          }
+          const entry = map.get(key)!;
+
+          for (const { colIndex, year } of yearCols) {
+            const amount = parseNum(row[colIndex]);
+            if (amount !== 0) {
+              entry.yearAmounts[year] = (entry.yearAmounts[year] || 0) + amount;
+            }
+          }
+        }
+
+        resolve(Array.from(map.values()));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export function parseRevenueFile(file: File): Promise<RevenueEntry[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

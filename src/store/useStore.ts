@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
 import { DEFAULT_TARGETS } from '../types';
+import type { RevenueLineItem } from '../utils/fileParser';
 
 const PROJECTS_KEY = 'cx-app-projects-v2';
 const TEAM_KEY = 'cx-app-team';
 const TARGETS_KEY = 'cx-app-targets';
 const TOGGLES_KEY = 'cx-app-project-toggles';
+const REVENUE_KEY = 'cx-app-revenue';
 
 export interface ProjectToggle {
   deploy: boolean;
@@ -127,4 +129,27 @@ export function useProjectToggles(projects: ProjectRow[]) {
   }, [projects, toggles]);
 
   return { toggles, setToggle, getToggle, filteredProjects };
+}
+
+export function useRevenueData() {
+  const [revenueItems, setRevenueItems] = useState<RevenueLineItem[]>(() => {
+    try {
+      const raw = localStorage.getItem(REVENUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(REVENUE_KEY, JSON.stringify(revenueItems));
+  }, [revenueItems]);
+
+  const importRevenue = useCallback((items: RevenueLineItem[]) => {
+    setRevenueItems(items);
+  }, []);
+
+  const clearRevenue = useCallback(() => { setRevenueItems([]); }, []);
+
+  return { revenueItems, importRevenue, clearRevenue };
 }
