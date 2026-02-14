@@ -15,7 +15,7 @@ type Page = 'dashboard' | 'projects' | 'team' | 'planning' | 'simulation' | 'pro
 
 function App() {
   const [page, setPage] = useState<Page>('dashboard');
-  const { projects, importProjects, clearProjects, deleteProject } = useProjectData();
+  const { projects, importProjects, clearProjects, deleteProject, updateProjects } = useProjectData();
   const { members, addMember, updateMember, deleteMember, clearMembers } = useTeamMembers();
   const { targets, updateTargets } = useTargets();
   const { setToggle, getToggle, filteredProjects } = useProjectToggles(projects);
@@ -110,6 +110,7 @@ function App() {
           <Projects
             projects={projects}
             importProjects={importProjects}
+            updateProjects={updateProjects}
             clearProjects={clearProjects}
             deleteProject={deleteProject}
             targets={targets}

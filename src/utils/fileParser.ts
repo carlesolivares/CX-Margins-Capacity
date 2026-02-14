@@ -146,6 +146,124 @@ function cleanAccountName(raw: string): string {
     .trim();
 }
 
+/** Revenue import: each row is a payment line.
+ *  - "type" column: "licenses" → RUN, "setup" → Deploy
+ *  - "CA year" (or similar) column(s): the revenue amount
+ *  - Grouped by account/program to produce totals per project.
+ *  Returns a map: accountKey → { deployRevenue, runRevenue } */
+export interface RevenueEntry {
+  account: string;
+  project: string;
+  deployRevenue: number;
+  runRevenue: number;
+}
+
+export function parseRevenueFile(file: File): Promise<RevenueEntry[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        if (rows.length < 2) {
+          reject(new Error('File must have at least a header row and one data row'));
+          return;
+        }
+
+        const headers = (rows[0] as string[]).map(h => (h || '').toString());
+
+        // Find account/program column
+        const accountCol = findColumn(headers, ['account', 'accounts', 'program', 'programme', 'customer', 'client', 'compte']);
+        if (accountCol === -1) {
+          reject(new Error('Could not find account/program column'));
+          return;
+        }
+
+        // Find project column (optional)
+        const projectCol = findColumn(headers, ['project', 'name', 'projet']);
+
+        // Find type column (licenses / setup)
+        const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
+        if (typeCol === -1) {
+          reject(new Error('Could not find "type" column (expected: type, category)'));
+          return;
+        }
+
+        // Find CA year column(s): match "ca 2026", "ca year", "ca annuel", "revenue year", "montant annuel"
+        const currentYear = new Date().getFullYear();
+        const caColIndices: number[] = [];
+        for (let i = 0; i < headers.length; i++) {
+          const nh = normalize(headers[i]);
+          if (
+            nh.includes(`ca ${currentYear}`) ||
+            nh.includes(`ca year`) ||
+            nh.includes(`ca annuel`) ||
+            nh.includes(`revenue year`) ||
+            nh.includes(`revenue ${currentYear}`) ||
+            nh.includes(`montant annuel`) ||
+            nh.includes(`montant ${currentYear}`) ||
+            nh === 'ca' ||
+            nh.includes(`${currentYear}`)
+          ) {
+            // Exclude columns that are clearly not revenue (conso, consumed, etc.)
+            if (!nh.includes('conso') && !nh.includes('consumed')) {
+              caColIndices.push(i);
+            }
+          }
+        }
+
+        if (caColIndices.length === 0) {
+          reject(new Error(`Could not find CA/revenue year column (tried: "CA ${currentYear}", "CA year", "revenue ${currentYear}")`));
+          return;
+        }
+
+        // Aggregate by account+project → { deployRevenue, runRevenue }
+        const map = new Map<string, RevenueEntry>();
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i] as unknown[];
+          if (!row || row.length === 0) continue;
+
+          const rawAccount = (row[accountCol] || '').toString().trim();
+          const account = cleanAccountName(rawAccount);
+          if (!account) continue;
+
+          const project = projectCol !== -1 ? (row[projectCol] || '').toString().trim() : '';
+          const type = normalize((row[typeCol] || '').toString());
+
+          // Sum all CA columns for this row
+          let amount = 0;
+          for (const ci of caColIndices) {
+            amount += parseNum(row[ci]);
+          }
+
+          const key = `${account}|||${project}`;
+          if (!map.has(key)) {
+            map.set(key, { account, project, deployRevenue: 0, runRevenue: 0 });
+          }
+          const entry = map.get(key)!;
+
+          if (type.includes('license') || type.includes('licence') || type.includes('run') || type.includes('maintenance') || type.includes('support')) {
+            entry.runRevenue += amount;
+          } else if (type.includes('setup') || type.includes('deploy') || type.includes('implementation') || type.includes('install') || type.includes('project')) {
+            entry.deployRevenue += amount;
+          }
+          // Unknown types are ignored
+        }
+
+        resolve(Array.from(map.values()));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export function parseProjectFile(file: File): Promise<ProjectRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

@@ -40,7 +40,11 @@ export function useProjectData() {
     setProjects(prev => prev.filter(p => p.id !== id));
   }, []);
 
-  return { projects, importProjects, clearProjects, deleteProject };
+  const updateProjects = useCallback((updater: (prev: ProjectRow[]) => ProjectRow[]) => {
+    setProjects(updater);
+  }, []);
+
+  return { projects, importProjects, clearProjects, deleteProject, updateProjects };
 }
 
 export function useTeamMembers() {

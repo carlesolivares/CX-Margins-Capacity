@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { ProjectRow, Targets } from '../types';
 import { FileUpload } from '../components/FileUpload';
-import { parseProjectFile } from '../utils/fileParser';
+import { parseProjectFile, parseRevenueFile } from '../utils/fileParser';
 import { formatCurrency, deployEurToJH, runEurToJH } from '../utils/margins';
 import { useSort } from '../hooks/useSort';
 import { Trash2, FolderOpen, Filter } from 'lucide-react';
@@ -9,13 +9,15 @@ import { Trash2, FolderOpen, Filter } from 'lucide-react';
 interface ProjectsProps {
   projects: ProjectRow[];
   importProjects: (rows: ProjectRow[]) => void;
+  updateProjects: (updater: (prev: ProjectRow[]) => ProjectRow[]) => void;
   clearProjects: () => void;
   deleteProject: (id: string) => void;
   targets: Targets;
 }
 
-export function Projects({ projects, importProjects, clearProjects, deleteProject, targets }: ProjectsProps) {
+export function Projects({ projects, importProjects, updateProjects, clearProjects, deleteProject, targets }: ProjectsProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [revenueResult, setRevenueResult] = useState<string>('');
 
   const handleFile = async (file: File) => {
     const parsed = await parseProjectFile(file);
@@ -24,6 +26,42 @@ export function Projects({ projects, importProjects, clearProjects, deleteProjec
     }
     importProjects(parsed);
     setStatusFilter('all');
+  };
+
+  const handleRevenueFile = async (file: File) => {
+    const entries = await parseRevenueFile(file);
+    if (entries.length === 0) {
+      throw new Error('No valid revenue rows found in file');
+    }
+
+    // Match revenue entries to existing projects by account name (case-insensitive)
+    let matched = 0;
+    let unmatched = 0;
+    const unmatchedNames: string[] = [];
+
+    updateProjects(prev => {
+      const updated = [...prev];
+      for (const entry of entries) {
+        const entryKey = entry.account.toLowerCase().trim();
+        const idx = updated.findIndex(p => p.account.toLowerCase().trim() === entryKey);
+        if (idx !== -1) {
+          updated[idx] = {
+            ...updated[idx],
+            deployRevenue: entry.deployRevenue > 0 ? entry.deployRevenue : updated[idx].deployRevenue,
+            runRevenue: entry.runRevenue > 0 ? entry.runRevenue : updated[idx].runRevenue,
+          };
+          matched++;
+        } else {
+          unmatched++;
+          unmatchedNames.push(entry.account);
+        }
+      }
+      return updated;
+    });
+
+    const msg = `Updated ${matched} project(s).` +
+      (unmatched > 0 ? ` ${unmatched} not matched: ${unmatchedNames.join(', ')}` : '');
+    setRevenueResult(msg);
   };
 
   const statuses = useMemo(() => {
@@ -59,6 +97,22 @@ export function Projects({ projects, importProjects, clearProjects, deleteProjec
         accept=".csv,.xlsx,.xls"
         onFile={handleFile}
       />
+
+      {projects.length > 0 && (
+        <>
+          <FileUpload
+            label="Import Revenue File"
+            description="CSV/Excel with payment lines: Account/Program, Type (licenses=RUN, setup=Deploy), CA year column(s) with amounts. Updates existing project revenues."
+            accept=".csv,.xlsx,.xls"
+            onFile={handleRevenueFile}
+          />
+          {revenueResult && (
+            <div className="upload-message success" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
+              {revenueResult}
+            </div>
+          )}
+        </>
+      )}
 
       <div className="section-header">
         <h3>

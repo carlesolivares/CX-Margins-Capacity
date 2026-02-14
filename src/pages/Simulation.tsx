@@ -13,7 +13,7 @@ import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line,
 } from 'recharts';
-import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap } from 'lucide-react';
+import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download } from 'lucide-react';
 
 interface SimulatedProject {
   id: string;
@@ -115,6 +115,32 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
   const resetAll = () => {
     resetSimTeam();
     setSimProjects([]);
+  };
+
+  const SIM_SNAPSHOT_KEY = 'cx-app-sim-snapshot';
+
+  const saveSnapshot = () => {
+    const snapshot = { simTeam, simProjects, savedAt: new Date().toISOString() };
+    localStorage.setItem(SIM_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    setSavedAt(snapshot.savedAt);
+  };
+
+  const [savedAt, setSavedAt] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem(SIM_SNAPSHOT_KEY);
+      if (raw) { return JSON.parse(raw).savedAt || null; }
+    } catch { /* ignore */ }
+    return null;
+  });
+
+  const loadSnapshot = () => {
+    try {
+      const raw = localStorage.getItem(SIM_SNAPSHOT_KEY);
+      if (!raw) return;
+      const snapshot = JSON.parse(raw);
+      if (snapshot.simTeam) { setSimTeam(snapshot.simTeam); setSimTeamInited(true); }
+      if (snapshot.simProjects) setSimProjects(snapshot.simProjects);
+    } catch { /* ignore */ }
   };
 
   const capacityForChart = hasTeamChanges ? simCapacity : baseCapacity;
@@ -267,11 +293,23 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
 
       <div className="sim-header">
         <h3>Demand vs Capacity by Month (JH)</h3>
-        {hasAnyChanges && (
-          <button className="btn btn-secondary" onClick={resetAll}>
-            <RotateCcw size={14} /> Reset All
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {hasAnyChanges && (
+            <button className="btn btn-secondary" onClick={saveSnapshot}>
+              <Save size={14} /> Save Snapshot
+            </button>
+          )}
+          {savedAt && (
+            <button className="btn btn-secondary" onClick={loadSnapshot}>
+              <Download size={14} /> Load Snapshot
+            </button>
+          )}
+          {hasAnyChanges && (
+            <button className="btn btn-secondary" onClick={resetAll}>
+              <RotateCcw size={14} /> Reset All
+            </button>
+          )}
+        </div>
       </div>
       <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} />
 
