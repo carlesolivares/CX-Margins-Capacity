@@ -164,6 +164,8 @@ export interface RevenueLineItem {
   project: string;
   type: 'deploy' | 'run' | 'unknown';
   yearAmounts: Record<number, number>; // year → amount
+  startDate: string; // license start date (date début)
+  endDate: string;   // license end date (date fin)
 }
 
 /** Detect all year columns in headers (matching patterns like "ca 2025", "2026", "revenue 2027", etc.) */
@@ -219,6 +221,10 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
         const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
         if (typeCol === -1) { reject(new Error('Could not find "type" column (expected: type, category)')); return; }
 
+        // Date columns for licenses (optional)
+        const startDateCol = findColumn(headers, ['date début', 'date debut', 'start date', 'début', 'debut', 'start', 'date de début', 'date de debut']);
+        const endDateCol = findColumn(headers, ['date fin', 'date de fin', 'end date', 'fin', 'end', 'expiration', 'termination']);
+
         const yearCols = detectYearColumns(headers);
         if (yearCols.length === 0) {
           reject(new Error('Could not find any year columns (expected columns with years like 2025, 2026, 2027...)'));
@@ -240,11 +246,22 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
           const typeRaw = (row[typeCol] || '').toString();
           const type = classifyType(typeRaw);
 
+          const rowStartDate = startDateCol !== -1 ? parseDate(row[startDateCol]) : '';
+          const rowEndDate = endDateCol !== -1 ? parseDate(row[endDateCol]) : '';
+
           const key = `${account}|||${project}|||${type}`;
           if (!map.has(key)) {
-            map.set(key, { account, project, type, yearAmounts: {} });
+            map.set(key, { account, project, type, yearAmounts: {}, startDate: rowStartDate, endDate: rowEndDate });
           }
           const entry = map.get(key)!;
+
+          // For dates: keep earliest start and latest end when aggregating
+          if (rowStartDate && (!entry.startDate || rowStartDate < entry.startDate)) {
+            entry.startDate = rowStartDate;
+          }
+          if (rowEndDate && (!entry.endDate || rowEndDate > entry.endDate)) {
+            entry.endDate = rowEndDate;
+          }
 
           for (const { colIndex, year } of yearCols) {
             const amount = parseNum(row[colIndex]);

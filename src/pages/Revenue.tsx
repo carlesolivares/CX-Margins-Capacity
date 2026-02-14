@@ -3,7 +3,8 @@ import type { RevenueLineItem } from '../utils/fileParser';
 import { parseRevenueFileDetailed } from '../utils/fileParser';
 import { FileUpload } from '../components/FileUpload';
 import { formatCurrency } from '../utils/margins';
-import { Receipt, Trash2, Filter } from 'lucide-react';
+import { Receipt, Trash2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface RevenueProps {
   revenueItems: RevenueLineItem[];
@@ -16,12 +17,15 @@ interface AggregatedRow {
   project: string;
   yearAmounts: Record<number, number>;
   total: number;
+  startDate: string;
+  endDate: string;
 }
 
-type SortKey = 'account' | 'project' | 'total' | number; // number = year
+type SortKey = 'account' | 'project' | 'total' | 'startDate' | 'endDate' | number;
+type ViewMode = 'setup' | 'licenses';
 
 export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenueProps) {
-  const [typeFilter, setTypeFilter] = useState<'all' | 'deploy' | 'run'>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('licenses');
   const [sortKey, setSortKey] = useState<SortKey>('account');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -33,29 +37,39 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     importRevenue(parsed);
   };
 
-  // Collect all years present in the data
+  const typeFilter = viewMode === 'setup' ? 'deploy' : 'run';
+
+  // Collect all years present in filtered data
+  const filteredItems = useMemo(
+    () => revenueItems.filter(r => r.type === typeFilter),
+    [revenueItems, typeFilter],
+  );
+
   const years = useMemo(() => {
     const set = new Set<number>();
-    for (const item of revenueItems) {
+    for (const item of filteredItems) {
       for (const y of Object.keys(item.yearAmounts)) {
         set.add(Number(y));
       }
     }
     return [...set].sort();
-  }, [revenueItems]);
+  }, [filteredItems]);
 
-  // Filter by type then aggregate by account+project
+  // Aggregate by account+project
   const aggregated = useMemo(() => {
-    const filtered = typeFilter === 'all'
-      ? revenueItems
-      : revenueItems.filter(r => r.type === typeFilter);
-
     const map = new Map<string, AggregatedRow>();
 
-    for (const item of filtered) {
+    for (const item of filteredItems) {
       const key = `${item.account}|||${item.project}`;
       if (!map.has(key)) {
-        map.set(key, { account: item.account, project: item.project, yearAmounts: {}, total: 0 });
+        map.set(key, {
+          account: item.account,
+          project: item.project,
+          yearAmounts: {},
+          total: 0,
+          startDate: item.startDate || '',
+          endDate: item.endDate || '',
+        });
       }
       const row = map.get(key)!;
       for (const [y, amount] of Object.entries(item.yearAmounts)) {
@@ -63,10 +77,17 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
         row.yearAmounts[year] = (row.yearAmounts[year] || 0) + amount;
         row.total += amount;
       }
+      // Keep earliest start, latest end
+      if (item.startDate && (!row.startDate || item.startDate < row.startDate)) {
+        row.startDate = item.startDate;
+      }
+      if (item.endDate && (!row.endDate || item.endDate > row.endDate)) {
+        row.endDate = item.endDate;
+      }
     }
 
     return Array.from(map.values());
-  }, [revenueItems, typeFilter]);
+  }, [filteredItems]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -79,8 +100,11 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
         cmp = a.project.localeCompare(b.project);
       } else if (sortKey === 'total') {
         cmp = a.total - b.total;
+      } else if (sortKey === 'startDate') {
+        cmp = (a.startDate || '').localeCompare(b.startDate || '');
+      } else if (sortKey === 'endDate') {
+        cmp = (a.endDate || '').localeCompare(b.endDate || '');
       } else {
-        // year
         cmp = (a.yearAmounts[sortKey] || 0) - (b.yearAmounts[sortKey] || 0);
       }
       return sortAsc ? cmp : -cmp;
@@ -93,7 +117,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
       setSortAsc(!sortAsc);
     } else {
       setSortKey(key);
-      setSortAsc(key === 'account' || key === 'project');
+      setSortAsc(key === 'account' || key === 'project' || key === 'startDate' || key === 'endDate');
     }
   };
 
@@ -128,13 +152,15 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     return { deploy, run };
   }, [revenueItems]);
 
+  const isLicenses = viewMode === 'licenses';
+
   return (
     <div className="page">
       <h2>Revenue</h2>
 
       <FileUpload
         label="Import Revenue File"
-        description="CSV/Excel with payment lines: Account/Program, Type (licenses=RUN, setup=Deploy), and year columns (2025, 2026, 2027...)"
+        description="CSV/Excel with payment lines: Account/Program, Type (licenses=RUN, setup=Deploy), year columns, and optionally Date début / Date fin for licenses."
         accept=".csv,.xlsx,.xls"
         onFile={handleFile}
       />
@@ -144,20 +170,22 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
           <div className="section-header">
             <h3>
               <Receipt size={18} />
-              Revenue by Project ({aggregated.length} projects, {revenueItems.length} lines)
+              {isLicenses ? 'Licenses' : 'Setup'} ({aggregated.length} projects)
             </h3>
             <div className="header-actions">
-              <div className="filter-group">
-                <Filter size={14} />
-                <select
-                  value={typeFilter}
-                  onChange={e => setTypeFilter(e.target.value as 'all' | 'deploy' | 'run')}
-                  className="filter-select"
+              <div className="toggle-group">
+                <button
+                  className={`toggle-btn ${viewMode === 'setup' ? 'active' : ''}`}
+                  onClick={() => setViewMode('setup')}
                 >
-                  <option value="all">All types ({revenueItems.length})</option>
-                  <option value="deploy">Deploy / Setup ({typeCounts.deploy})</option>
-                  <option value="run">RUN / Licenses ({typeCounts.run})</option>
-                </select>
+                  Setup ({typeCounts.deploy})
+                </button>
+                <button
+                  className={`toggle-btn ${viewMode === 'licenses' ? 'active' : ''}`}
+                  onClick={() => setViewMode('licenses')}
+                >
+                  Licenses ({typeCounts.run})
+                </button>
               </div>
               <button className="btn btn-danger" onClick={clearRevenue}>
                 <Trash2 size={14} /> Clear
@@ -165,18 +193,25 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
             </div>
           </div>
 
-          <div className="summary-grid-4">
-            {years.map(y => (
-              <div className="summary-card neutral-card" key={y}>
-                <span className="summary-label">{y}</span>
-                <span className="summary-value">{formatCurrency(yearTotals.byYear[y] || 0)}</span>
+          {years.length > 0 && (
+            <div className="chart-container chart-full-width">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart
+                  data={years.map(y => ({ year: String(y), amount: yearTotals.byYear[y] || 0 }))}
+                  margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="year" tick={{ fontSize: 13 }} />
+                  <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} width={90} />
+                  <Tooltip formatter={(value) => [formatCurrency(value as number), isLicenses ? 'Licenses' : 'Setup']} />
+                  <Bar dataKey="amount" fill={isLicenses ? '#6366f1' : '#10b981'} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
               </div>
-            ))}
-            <div className="summary-card deployment">
-              <span className="summary-label">Grand Total</span>
-              <span className="summary-value">{formatCurrency(yearTotals.grandTotal)}</span>
             </div>
-          </div>
+          )}
 
           {aggregated.length > 0 && (
             <div className="table-wrapper">
@@ -185,6 +220,12 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                   <tr>
                     <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
                     <th onClick={() => toggleSort('project')}>Project{indicator('project')}</th>
+                    {isLicenses && (
+                      <>
+                        <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
+                        <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
+                      </>
+                    )}
                     {years.map(y => (
                       <th key={y} className="right" onClick={() => toggleSort(y)}>
                         {y}{indicator(y)}
@@ -198,6 +239,12 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                     <tr key={i}>
                       <td className="customer-name">{row.account}</td>
                       <td>{row.project || '—'}</td>
+                      {isLicenses && (
+                        <>
+                          <td className="date-cell">{row.startDate || '—'}</td>
+                          <td className="date-cell">{row.endDate || '—'}</td>
+                        </>
+                      )}
                       {years.map(y => {
                         const val = row.yearAmounts[y] || 0;
                         return (
@@ -214,6 +261,12 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                   <tr>
                     <td><strong>Total</strong></td>
                     <td></td>
+                    {isLicenses && (
+                      <>
+                        <td></td>
+                        <td></td>
+                      </>
+                    )}
                     {years.map(y => (
                       <td key={y} className="right">
                         <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
