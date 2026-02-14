@@ -108,12 +108,6 @@ export function Report({ projects, members, targets }: ReportProps) {
     const runRemaining = runAvailable - runConsumed;
     const combinedRemaining = deployRemaining + runRemaining;
 
-    // Full-year team cost
-    const teamCost = members.reduce((s, m) => {
-      const totalDays = m.q1Days + m.q2Days + m.q3Days + m.q4Days;
-      return s + totalDays * m.dailyRate;
-    }, 0);
-
     // Team cost forecast from today to Dec 31
     const today = new Date();
     const currentQ = Math.floor(today.getMonth() / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
@@ -144,12 +138,8 @@ export function Report({ projects, members, targets }: ReportProps) {
 
     const forecastBalance = combinedRemaining - forecastTeamCost;
 
-    const netResult = combinedAvailable - teamCost;
-
     return {
-      deployRev, deployAvailable,
-      runRev, runAvailable,
-      combinedAvailable, teamCost, netResult,
+      deployAvailable, runAvailable, combinedAvailable,
       deployConsumed, runConsumed, totalConsumed,
       deployRemaining, runRemaining, combinedRemaining,
       forecastTeamCost, forecastBalance,
@@ -230,91 +220,9 @@ export function Report({ projects, members, targets }: ReportProps) {
       {/* ── 2. Financial Overview ── */}
       <div className="report-section">
         <h3><DollarSign size={18} /> Financial Overview</h3>
-        <p className="report-hint">
-          Available money = (1 &minus; target margin%) &times; revenue. This is the cost budget you can spend while meeting margin targets.
-        </p>
-
-        <div className="table-wrapper">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th></th>
-                <th className="right">Revenue</th>
-                <th className="right">Target Margin</th>
-                <th className="right">Available Money</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Deploy</strong></td>
-                <td className="right">{formatCurrency(financials.deployRev)}</td>
-                <td className="right">{targets.deployMargin}%</td>
-                <td className="right">
-                  <span className={financials.deployAvailable >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(financials.deployAvailable)}
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td><strong>RUN</strong></td>
-                <td className="right">{formatCurrency(financials.runRev)}</td>
-                <td className="right">{targets.runMargin}%</td>
-                <td className="right">
-                  <span className={financials.runAvailable >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(financials.runAvailable)}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td><strong>Combined</strong></td>
-                <td className="right"><strong>{formatCurrency(financials.deployRev + financials.runRev)}</strong></td>
-                <td className="right"></td>
-                <td className="right">
-                  <strong className={financials.combinedAvailable >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(financials.combinedAvailable)}
-                  </strong>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        <div className="report-kpi-grid report-kpi-grid-3" style={{ marginTop: 16 }}>
-          <div className="report-kpi-card">
-            <span className="report-kpi-label">Available Money</span>
-            <span className={`report-kpi-value ${financials.combinedAvailable >= 0 ? 'healthy' : 'unhealthy'}`}>
-              {formatCurrency(financials.combinedAvailable)}
-            </span>
-            <span className="report-kpi-sub">(1&minus;{targets.deployMargin}%) &times; Deploy + (1&minus;{targets.runMargin}%) &times; RUN</span>
-          </div>
-          <div className="report-kpi-card">
-            <span className="report-kpi-label">Team Cost</span>
-            <span className="report-kpi-value">{formatCurrency(financials.teamCost)}</span>
-            <span className="report-kpi-sub">{members.length} members</span>
-          </div>
-          <div className="report-kpi-card">
-            <span className="report-kpi-label">Net Result</span>
-            <span className={`report-kpi-value ${financials.netResult >= 0 ? 'healthy' : 'unhealthy'}`}>
-              {formatCurrency(financials.netResult)}
-            </span>
-            <span className="report-kpi-sub">{financials.netResult >= 0 ? 'Profit' : 'Loss'}</span>
-          </div>
-        </div>
-
-        {financials.netResult < 0 && (
-          <div className="report-action-box danger" style={{ marginTop: 12 }}>
-            <AlertTriangle size={16} />
-            <div>
-              <strong>Team cost exceeds available margin by {formatCurrency(Math.abs(financials.netResult))}.</strong>
-              <p>Consider: improving project margins, reducing team size, lowering daily rates, or increasing revenue.</p>
-            </div>
-          </div>
-        )}
 
         {/* Remaining Budget after Consumption */}
-        <h4 style={{ marginTop: 24 }}>Remaining Budget (Available &minus; Consumed)</h4>
+        <h4>Remaining Budget (Available &minus; Consumed)</h4>
         <p className="report-hint">
           How much of the cost budget is still available after subtracting actual consumed costs.
         </p>

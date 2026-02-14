@@ -30,6 +30,7 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
   const [tab, setTab] = useState<ProjTab>('margins');
   const [runMarginOverrides, setRunMarginOverrides] = useState<Record<string, number>>({});
   const [showOverridePanel, setShowOverridePanel] = useState(false);
+  const [highlightedProjectId, setHighlightedProjectId] = useState<string | null>(null);
 
   const projections = useMemo(
     () => computeProjections(projects, targets),
@@ -225,6 +226,8 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
               defaultMargin={targets.runMargin}
               onChange={(id, val) => setRunMarginOverrides(prev => ({ ...prev, [id]: val }))}
               onReset={() => setRunMarginOverrides({})}
+              highlightedId={highlightedProjectId}
+              clearHighlight={() => setHighlightedProjectId(null)}
             />
           )}
 
@@ -232,6 +235,12 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
             projections={adjustedProjections}
             type="run"
             threshold={targets.runMargin}
+            onBarClick={(id) => {
+              if (phase1ProjectIds.has(id)) {
+                setShowOverridePanel(true);
+                setHighlightedProjectId(id);
+              }
+            }}
           />
 
           {/* Detail table */}
@@ -271,6 +280,7 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
 
 function RunMarginOverridePanel({
   projections, phase1Ids, overrides, defaultMargin, onChange, onReset,
+  highlightedId, clearHighlight,
 }: {
   projections: ProjectProjection[];
   phase1Ids: Set<string>;
@@ -278,11 +288,22 @@ function RunMarginOverridePanel({
   defaultMargin: number;
   onChange: (id: string, val: number) => void;
   onReset: () => void;
+  highlightedId?: string | null;
+  clearHighlight?: () => void;
 }) {
   const phase1Projects = projections.filter(p => phase1Ids.has(p.id) && p.runRevenue > 0);
   if (phase1Projects.length === 0) return null;
 
   const hasOverrides = Object.keys(overrides).length > 0;
+
+  // Sort: put highlighted project first so it's immediately visible
+  const sorted = highlightedId
+    ? [...phase1Projects].sort((a, b) => {
+        if (a.id === highlightedId) return -1;
+        if (b.id === highlightedId) return 1;
+        return 0;
+      })
+    : phase1Projects;
 
   return (
     <div className="override-panel">
@@ -293,10 +314,15 @@ function RunMarginOverridePanel({
         )}
       </div>
       <div className="override-grid">
-        {phase1Projects.map(p => {
+        {sorted.map(p => {
           const val = overrides[p.id] ?? defaultMargin;
+          const isHighlighted = p.id === highlightedId;
           return (
-            <div key={p.id} className="override-item">
+            <div
+              key={p.id}
+              className={`override-item${isHighlighted ? ' override-item-highlight' : ''}`}
+              onClick={() => { if (isHighlighted && clearHighlight) clearHighlight(); }}
+            >
               <span className="override-label">{p.account} &mdash; {p.project}</span>
               <div className="slider-row">
                 <input
@@ -628,12 +654,14 @@ interface ProjectionChartProps {
   projections: ProjectProjection[];
   type: 'deploy' | 'run';
   threshold: number;
+  onBarClick?: (projectId: string) => void;
 }
 
-function ProjectionChart({ projections, type, threshold }: ProjectionChartProps) {
+function ProjectionChart({ projections, type, threshold, onBarClick }: ProjectionChartProps) {
   const data = projections
     .filter(p => type === 'deploy' ? p.deployRevenue > 0 : p.runRevenue > 0)
     .map(p => ({
+      id: p.id,
       name: p.account,
       margin: type === 'deploy' ? p.deployMarginProjected : p.runMarginProjected,
       healthy: type === 'deploy'
@@ -644,6 +672,12 @@ function ProjectionChart({ projections, type, threshold }: ProjectionChartProps)
 
   if (data.length === 0) return null;
 
+  const handleClick = (_: unknown, index: number) => {
+    if (onBarClick && data[index]) {
+      onBarClick(data[index].id);
+    }
+  };
+
   return (
     <div className="chart-container chart-full-width">
       <ResponsiveContainer width="100%" height={Math.max(300, data.length * 28)}>
@@ -653,7 +687,7 @@ function ProjectionChart({ projections, type, threshold }: ProjectionChartProps)
           <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
           <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Projected Margin']} />
           <ReferenceLine x={threshold} stroke="#ef4444" strokeDasharray="4 4" label={{ value: `${threshold}%`, position: 'top', fontSize: 11 }} />
-          <Bar dataKey="margin" radius={[0, 4, 4, 0]}>
+          <Bar dataKey="margin" radius={[0, 4, 4, 0]} onClick={handleClick} style={{ cursor: onBarClick ? 'pointer' : undefined }}>
             {data.map((entry, i) => (
               <Cell key={i} fill={entry.healthy ? '#10b981' : '#f59e0b'} />
             ))}
