@@ -221,9 +221,9 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
           {showOverridePanel && runProjects.length > 0 && (
             <RunMarginOverridePanel
               projections={adjustedProjections}
+              baseProjections={projections}
               phase1Ids={phase1ProjectIds}
               overrides={runMarginOverrides}
-              defaultMargin={targets.runMargin}
               onChange={(id, val) => setRunMarginOverrides(prev => ({ ...prev, [id]: val }))}
               onReset={() => setRunMarginOverrides({})}
               highlightedId={highlightedProjectId}
@@ -277,13 +277,13 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
 /* ─── Sub-components ─── */
 
 function RunMarginOverridePanel({
-  projections, phase1Ids, overrides, defaultMargin, onChange, onReset,
+  projections, baseProjections, phase1Ids, overrides, onChange, onReset,
   highlightedId, clearHighlight,
 }: {
   projections: ProjectProjection[];
+  baseProjections: ProjectProjection[];
   phase1Ids: Set<string>;
   overrides: Record<string, number>;
-  defaultMargin: number;
   onChange: (id: string, val: number) => void;
   onReset: () => void;
   highlightedId?: string | null;
@@ -306,14 +306,15 @@ function RunMarginOverridePanel({
   return (
     <div className="override-panel">
       <div className="override-panel-header">
-        <span>Set RUN margin % for projects still in Phase 1 (Deploy). Default: {defaultMargin}%</span>
+        <span>Adjust RUN margin % for Phase 1 projects. Defaults to each project's projected margin.</span>
         {hasOverrides && (
           <button className="btn btn-secondary btn-sm" onClick={onReset}>Reset All</button>
         )}
       </div>
       <div className="override-grid">
         {sorted.map(p => {
-          const val = overrides[p.id] ?? defaultMargin;
+          const baseMargin = baseProjections.find(b => b.id === p.id)?.runMarginProjected ?? 0;
+          const val = overrides[p.id] ?? baseMargin;
           const isHighlighted = p.id === highlightedId;
           return (
             <div
@@ -577,6 +578,20 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage }:
 function ProjectionTable({ projections, targets }: { projections: ProjectProjection[]; targets: Targets }) {
   const { sorted, toggle, sortIndicator } = useSort(projections);
 
+  const totals = useMemo(() => {
+    const tDeployRev = projections.reduce((s, p) => s + p.deployRevenue, 0);
+    const tDeployConso = projections.reduce((s, p) => s + p.deployConso, 0);
+    const tDeployProj = projections.reduce((s, p) => s + p.deployProjected, 0);
+    const tDeployMargin = tDeployRev > 0
+      ? Math.round(((tDeployRev - tDeployProj) / tDeployRev) * 1000) / 10 : 0;
+    const tRunRev = projections.reduce((s, p) => s + p.runRevenue, 0);
+    const tRunConso = projections.reduce((s, p) => s + p.runConso, 0);
+    const tRunProj = projections.reduce((s, p) => s + p.runProjected, 0);
+    const tRunMargin = tRunRev > 0
+      ? Math.round(((tRunRev - tRunProj) / tRunRev) * 1000) / 10 : 0;
+    return { tDeployRev, tDeployConso, tDeployProj, tDeployMargin, tRunRev, tRunConso, tRunProj, tRunMargin };
+  }, [projections]);
+
   return (
     <div className="table-wrapper">
       <table className="data-table">
@@ -628,6 +643,31 @@ function ProjectionTable({ projections, targets }: { projections: ProjectProject
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr>
+            <td><strong>Total ({projections.length})</strong></td>
+            <td></td>
+            <td></td>
+            <td className="right"><strong>{formatCurrency(totals.tDeployRev)}</strong></td>
+            <td className="right"><strong>{formatCurrency(totals.tDeployConso)}</strong></td>
+            <td className="right"><strong>{formatCurrency(totals.tDeployProj)}</strong></td>
+            <td className="right">
+              <strong className={marginClass(totals.tDeployMargin, targets.deployMargin)}>
+                {totals.tDeployRev > 0 ? `${totals.tDeployMargin}%` : '\u2014'}
+              </strong>
+            </td>
+            <td></td>
+            <td className="right"><strong>{formatCurrency(totals.tRunRev)}</strong></td>
+            <td className="right"><strong>{formatCurrency(totals.tRunConso)}</strong></td>
+            <td className="right"><strong>{formatCurrency(totals.tRunProj)}</strong></td>
+            <td className="right">
+              <strong className={marginClass(totals.tRunMargin, targets.runMargin)}>
+                {totals.tRunRev > 0 ? `${totals.tRunMargin}%` : '\u2014'}
+              </strong>
+            </td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
