@@ -144,12 +144,13 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
 
   // Type counts
   const typeCounts = useMemo(() => {
-    let deploy = 0, run = 0;
+    let deploy = 0, run = 0, unknown = 0;
     for (const item of revenueItems) {
       if (item.type === 'deploy') deploy++;
       else if (item.type === 'run') run++;
+      else unknown++;
     }
-    return { deploy, run };
+    return { deploy, run, unknown };
   }, [revenueItems]);
 
   const isLicenses = viewMode === 'licenses';
@@ -196,6 +197,11 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
           {aggregated.length === 0 ? (
             <div className="empty-state">
               No {isLicenses ? 'license' : 'setup'} entries found. Try switching to {isLicenses ? 'Setup' : 'Licenses'}.
+              {typeCounts.unknown > 0 && (
+                <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>
+                  {typeCounts.unknown} row(s) had an unrecognized type. Check the "Type" column values (expected: licenses, setup, deploy, run).
+                </div>
+              )}
             </div>
           ) : (
             <>

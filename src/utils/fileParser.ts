@@ -172,10 +172,11 @@ export interface RevenueLineItem {
 function detectYearColumns(headers: string[]): { colIndex: number; year: number }[] {
   const result: { colIndex: number; year: number }[] = [];
   const yearRe = /\b(20[2-3]\d)\b/; // matches years 2020-2039
+  const excludePatterns = ['conso', 'consumed', 'cost', 'date', 'début', 'debut', 'start', 'fin', 'end', 'expiration', 'termination'];
   for (let i = 0; i < headers.length; i++) {
     const nh = normalize(headers[i]);
-    // Exclude columns that are clearly not revenue
-    if (nh.includes('conso') || nh.includes('consumed') || nh.includes('cost')) continue;
+    // Exclude columns that are clearly not revenue (costs, dates, etc.)
+    if (excludePatterns.some(p => nh.includes(p))) continue;
     const m = nh.match(yearRe);
     if (m) {
       result.push({ colIndex: i, year: parseInt(m[1], 10) });
@@ -186,10 +187,10 @@ function detectYearColumns(headers: string[]): { colIndex: number; year: number 
 
 function classifyType(type: string): 'deploy' | 'run' | 'unknown' {
   const t = normalize(type);
-  if (t.includes('license') || t.includes('licence') || t.includes('run') || t.includes('maintenance') || t.includes('support')) {
+  if (t.includes('license') || t.includes('licence') || t.includes('run') || t.includes('maintenance') || t.includes('support') || t.includes('récurrent') || t.includes('recurrent') || t.includes('abonnement') || t.includes('subscription')) {
     return 'run';
   }
-  if (t.includes('setup') || t.includes('deploy') || t.includes('implementation') || t.includes('install') || t.includes('project')) {
+  if (t.includes('setup') || t.includes('deploy') || t.includes('implementation') || t.includes('install') || t.includes('project') || t.includes('projet') || t.includes('mise en place') || t.includes('intégration') || t.includes('integration')) {
     return 'deploy';
   }
   return 'unknown';
@@ -221,11 +222,18 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
         const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
         if (typeCol === -1) { reject(new Error('Could not find "type" column (expected: type, category)')); return; }
 
-        // Date columns for licenses (optional)
-        const startDateCol = findColumn(headers, ['date début', 'date debut', 'start date', 'début', 'debut', 'start', 'date de début', 'date de debut']);
-        const endDateCol = findColumn(headers, ['date fin', 'date de fin', 'end date', 'fin', 'end', 'expiration', 'termination']);
+        // Date columns for licenses (optional) — use specific candidates to avoid matching unrelated columns
+        const startDateCol = findColumn(headers, ['date début', 'date debut', 'start date', 'date de début', 'date de debut', 'début', 'debut']);
+        const endDateCol = findColumn(headers, ['date fin', 'date de fin', 'end date', 'date de fin', 'expiration', 'termination']);
 
-        const yearCols = detectYearColumns(headers);
+        let yearCols = detectYearColumns(headers);
+        // Fallback: if no year columns found, look for generic amount/CA columns and assign to current year
+        if (yearCols.length === 0) {
+          const amountCol = findColumn(headers, ['ca', 'amount', 'montant', 'revenue', 'chiffre'], ['conso', 'consumed', 'cost', 'date', 'type']);
+          if (amountCol !== -1) {
+            yearCols = [{ colIndex: amountCol, year: new Date().getFullYear() }];
+          }
+        }
         if (yearCols.length === 0) {
           reject(new Error('Could not find any year columns (expected columns with years like 2025, 2026, 2027...)'));
           return;
