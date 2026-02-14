@@ -98,10 +98,51 @@ export function Report({ projects, members, targets }: ReportProps) {
 
     const combinedAvailable = deployAvailable + runAvailable;
 
+    // Consumed costs from project data
+    const deployConsumed = projects.reduce((s, p) => s + (p.deployConso || 0), 0);
+    const runConsumed = projects.reduce((s, p) => s + (p.runConso || 0), 0);
+    const totalConsumed = deployConsumed + runConsumed;
+
+    // Remaining = available budget - already consumed
+    const deployRemaining = deployAvailable - deployConsumed;
+    const runRemaining = runAvailable - runConsumed;
+    const combinedRemaining = deployRemaining + runRemaining;
+
+    // Full-year team cost
     const teamCost = members.reduce((s, m) => {
       const totalDays = m.q1Days + m.q2Days + m.q3Days + m.q4Days;
       return s + totalDays * m.dailyRate;
     }, 0);
+
+    // Team cost forecast from today to Dec 31
+    const today = new Date();
+    const currentQ = Math.floor(today.getMonth() / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
+    const qStartMonth = currentQ * 3;
+    const qStartDate = new Date(today.getFullYear(), qStartMonth, 1);
+    const qEndDate = new Date(today.getFullYear(), qStartMonth + 3, 0); // last day of quarter
+    const qTotalMs = qEndDate.getTime() - qStartDate.getTime();
+    const qElapsedMs = today.getTime() - qStartDate.getTime();
+    const remainingPct = 1 - (qTotalMs > 0 ? qElapsedMs / qTotalMs : 0);
+
+    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
+    const forecastTeamCost = members.reduce((s, m) => {
+      let memberForecast = 0;
+      for (let q = 0; q < 4; q++) {
+        const days = m[qKeys[q]];
+        if (q < currentQ) {
+          // Past quarter: already consumed, skip
+        } else if (q === currentQ) {
+          // Current quarter: remaining portion
+          memberForecast += days * remainingPct * m.dailyRate;
+        } else {
+          // Future quarter: full cost
+          memberForecast += days * m.dailyRate;
+        }
+      }
+      return s + memberForecast;
+    }, 0);
+
+    const forecastBalance = combinedRemaining - forecastTeamCost;
 
     const netResult = combinedAvailable - teamCost;
 
@@ -109,8 +150,12 @@ export function Report({ projects, members, targets }: ReportProps) {
       deployRev, deployAvailable,
       runRev, runAvailable,
       combinedAvailable, teamCost, netResult,
+      deployConsumed, runConsumed, totalConsumed,
+      deployRemaining, runRemaining, combinedRemaining,
+      forecastTeamCost, forecastBalance,
+      currentQ, remainingPct,
     };
-  }, [deployAnalysis, runAnalysis, members, targets]);
+  }, [deployAnalysis, runAnalysis, members, targets, projects]);
 
   // Stable projects (both deploy and RUN margins meet targets)
   const stableProjects = useMemo(() => {
@@ -264,6 +309,107 @@ export function Report({ projects, members, targets }: ReportProps) {
             <div>
               <strong>Team cost exceeds available margin by {formatCurrency(Math.abs(financials.netResult))}.</strong>
               <p>Consider: improving project margins, reducing team size, lowering daily rates, or increasing revenue.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Remaining Budget after Consumption */}
+        <h4 style={{ marginTop: 24 }}>Remaining Budget (Available &minus; Consumed)</h4>
+        <p className="report-hint">
+          How much of the cost budget is still available after subtracting actual consumed costs.
+        </p>
+
+        <div className="table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th className="right">Available Money</th>
+                <th className="right">Consumed</th>
+                <th className="right">Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Deploy</strong></td>
+                <td className="right">{formatCurrency(financials.deployAvailable)}</td>
+                <td className="right">{formatCurrency(financials.deployConsumed)}</td>
+                <td className="right">
+                  <span className={financials.deployRemaining >= 0 ? 'text-success' : 'text-danger'}>
+                    {formatCurrency(financials.deployRemaining)}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>RUN</strong></td>
+                <td className="right">{formatCurrency(financials.runAvailable)}</td>
+                <td className="right">{formatCurrency(financials.runConsumed)}</td>
+                <td className="right">
+                  <span className={financials.runRemaining >= 0 ? 'text-success' : 'text-danger'}>
+                    {formatCurrency(financials.runRemaining)}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><strong>Combined</strong></td>
+                <td className="right"><strong>{formatCurrency(financials.combinedAvailable)}</strong></td>
+                <td className="right"><strong>{formatCurrency(financials.totalConsumed)}</strong></td>
+                <td className="right">
+                  <strong className={financials.combinedRemaining >= 0 ? 'text-success' : 'text-danger'}>
+                    {formatCurrency(financials.combinedRemaining)}
+                  </strong>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* Forecast: Remaining Budget vs Team Cost to Year-End */}
+        <h4 style={{ marginTop: 24 }}>Forecast: Remaining Budget vs Team Cost to Year-End</h4>
+        <p className="report-hint">
+          Team cost forecast from today (Q{financials.currentQ + 1}, {Math.round(financials.remainingPct * 100)}% remaining) through Q4.
+          Compares remaining budget to upcoming team expenses.
+        </p>
+
+        <div className="report-kpi-grid report-kpi-grid-3" style={{ marginTop: 12 }}>
+          <div className="report-kpi-card">
+            <span className="report-kpi-label">Remaining Budget</span>
+            <span className={`report-kpi-value ${financials.combinedRemaining >= 0 ? 'healthy' : 'unhealthy'}`}>
+              {formatCurrency(financials.combinedRemaining)}
+            </span>
+            <span className="report-kpi-sub">Available &minus; consumed</span>
+          </div>
+          <div className="report-kpi-card">
+            <span className="report-kpi-label">Team Cost (Remaining Year)</span>
+            <span className="report-kpi-value">{formatCurrency(financials.forecastTeamCost)}</span>
+            <span className="report-kpi-sub">Q{financials.currentQ + 1} ({Math.round(financials.remainingPct * 100)}%) + Q{Math.min(financials.currentQ + 2, 4)}&ndash;Q4</span>
+          </div>
+          <div className="report-kpi-card">
+            <span className="report-kpi-label">Forecast Balance</span>
+            <span className={`report-kpi-value ${financials.forecastBalance >= 0 ? 'healthy' : 'unhealthy'}`}>
+              {formatCurrency(financials.forecastBalance)}
+            </span>
+            <span className="report-kpi-sub">{financials.forecastBalance >= 0 ? 'Sufficient' : 'Shortfall'}</span>
+          </div>
+        </div>
+
+        {financials.forecastBalance < 0 && (
+          <div className="report-action-box danger" style={{ marginTop: 12 }}>
+            <AlertTriangle size={16} />
+            <div>
+              <strong>Budget shortfall of {formatCurrency(Math.abs(financials.forecastBalance))} projected for the remainder of the year.</strong>
+              <p>You may need to reduce team capacity, lower rates, or increase project revenue to cover team costs through year-end.</p>
+            </div>
+          </div>
+        )}
+
+        {financials.forecastBalance >= 0 && (
+          <div className="report-action-box success" style={{ marginTop: 12 }}>
+            <CheckCircle size={16} />
+            <div>
+              <strong>Remaining budget covers team costs through year-end with {formatCurrency(financials.forecastBalance)} to spare.</strong>
             </div>
           </div>
         )}
