@@ -12,16 +12,23 @@ interface RevenueProps {
   clearRevenue: () => void;
 }
 
-interface AggregatedRow {
+interface DisplayRow {
   account: string;
   project: string;
+  type: string;
   yearAmounts: Record<number, number>;
   total: number;
   startDate: string;
   endDate: string;
 }
 
-type SortKey = 'account' | 'project' | 'total' | 'startDate' | 'endDate' | number;
+type SortKey = 'account' | 'project' | 'type' | 'total' | 'startDate' | 'endDate' | number;
+
+function typeLabel(t: string): string {
+  if (t === 'run') return 'License';
+  if (t === 'deploy') return 'Setup';
+  return t;
+}
 
 export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenueProps) {
   const [sortKey, setSortKey] = useState<SortKey>('account');
@@ -35,60 +42,44 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     importRevenue(parsed);
   };
 
-  // Collect all years present in data
+  // Build display rows (one per imported line)
+  const displayRows = useMemo((): DisplayRow[] => {
+    return revenueItems.map(item => {
+      const total = Object.values(item.yearAmounts).reduce((s, v) => s + v, 0);
+      return {
+        account: item.account,
+        project: item.project,
+        type: item.type,
+        yearAmounts: item.yearAmounts,
+        total,
+        startDate: item.startDate || '',
+        endDate: item.endDate || '',
+      };
+    });
+  }, [revenueItems]);
+
+  // Collect all years
   const years = useMemo(() => {
     const set = new Set<number>();
-    for (const item of revenueItems) {
-      for (const y of Object.keys(item.yearAmounts)) {
+    for (const row of displayRows) {
+      for (const y of Object.keys(row.yearAmounts)) {
         set.add(Number(y));
       }
     }
     return [...set].sort();
-  }, [revenueItems]);
-
-  // Aggregate by account+project
-  const aggregated = useMemo(() => {
-    const map = new Map<string, AggregatedRow>();
-
-    for (const item of revenueItems) {
-      const key = `${item.account}|||${item.project}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          account: item.account,
-          project: item.project,
-          yearAmounts: {},
-          total: 0,
-          startDate: item.startDate || '',
-          endDate: item.endDate || '',
-        });
-      }
-      const row = map.get(key)!;
-      for (const [y, amount] of Object.entries(item.yearAmounts)) {
-        const year = Number(y);
-        row.yearAmounts[year] = (row.yearAmounts[year] || 0) + amount;
-        row.total += amount;
-      }
-      // Keep earliest start, latest end
-      if (item.startDate && (!row.startDate || item.startDate < row.startDate)) {
-        row.startDate = item.startDate;
-      }
-      if (item.endDate && (!row.endDate || item.endDate > row.endDate)) {
-        row.endDate = item.endDate;
-      }
-    }
-
-    return Array.from(map.values());
-  }, [revenueItems]);
+  }, [displayRows]);
 
   // Sort
   const sorted = useMemo(() => {
-    const copy = [...aggregated];
+    const copy = [...displayRows];
     copy.sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'account') {
         cmp = a.account.localeCompare(b.account);
       } else if (sortKey === 'project') {
         cmp = a.project.localeCompare(b.project);
+      } else if (sortKey === 'type') {
+        cmp = a.type.localeCompare(b.type);
       } else if (sortKey === 'total') {
         cmp = a.total - b.total;
       } else if (sortKey === 'startDate') {
@@ -101,14 +92,14 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
       return sortAsc ? cmp : -cmp;
     });
     return copy;
-  }, [aggregated, sortKey, sortAsc]);
+  }, [displayRows, sortKey, sortAsc]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
     } else {
       setSortKey(key);
-      setSortAsc(key === 'account' || key === 'project' || key === 'startDate' || key === 'endDate');
+      setSortAsc(key === 'account' || key === 'project' || key === 'type' || key === 'startDate' || key === 'endDate');
     }
   };
 
@@ -124,17 +115,14 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     for (const y of years) {
       totals[y] = 0;
     }
-    for (const row of aggregated) {
+    for (const row of displayRows) {
       for (const y of years) {
         totals[y] += row.yearAmounts[y] || 0;
       }
       grandTotal += row.total;
     }
     return { byYear: totals, grandTotal };
-  }, [aggregated, years]);
-
-  // Check if any row has dates
-  const hasDates = aggregated.some(r => r.startDate || r.endDate);
+  }, [displayRows, years]);
 
   return (
     <div className="page">
@@ -142,7 +130,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
 
       <FileUpload
         label="Import Revenue File"
-        description="CSV/Excel with columns: Account/Program, Type, year columns (e.g. 2025, 2026), and optionally Date début / Date fin."
+        description="CSV/Excel: Account, Program, Type (license/setup), year columns, Date début / Date fin (licenses), Invoice date / Payment delay (setup)."
         accept=".csv,.xlsx,.xls"
         onFile={handleFile}
       />
@@ -152,7 +140,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
           <div className="section-header">
             <h3>
               <Receipt size={18} />
-              Revenue ({aggregated.length} projects)
+              Revenue ({displayRows.length} lines)
             </h3>
             <div className="header-actions">
               <button className="btn btn-danger" onClick={clearRevenue}>
@@ -186,13 +174,10 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
               <thead>
                 <tr>
                   <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
-                  <th onClick={() => toggleSort('project')}>Project{indicator('project')}</th>
-                  {hasDates && (
-                    <>
-                      <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
-                      <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
-                    </>
-                  )}
+                  <th onClick={() => toggleSort('project')}>Program{indicator('project')}</th>
+                  <th onClick={() => toggleSort('type')}>Type{indicator('type')}</th>
+                  <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
+                  <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
                   {years.map(y => (
                     <th key={y} className="right" onClick={() => toggleSort(y)}>
                       {y}{indicator(y)}
@@ -206,12 +191,9 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                   <tr key={i}>
                     <td className="customer-name">{row.account}</td>
                     <td>{row.project || '—'}</td>
-                    {hasDates && (
-                      <>
-                        <td className="date-cell">{row.startDate || '—'}</td>
-                        <td className="date-cell">{row.endDate || '—'}</td>
-                      </>
-                    )}
+                    <td><span className={`badge ${row.type === 'run' ? 'healthy' : row.type === 'deploy' ? 'warning' : ''}`}>{typeLabel(row.type)}</span></td>
+                    <td className="date-cell">{row.startDate || '—'}</td>
+                    <td className="date-cell">{row.endDate || '—'}</td>
                     {years.map(y => {
                       const val = row.yearAmounts[y] || 0;
                       return (
@@ -228,12 +210,9 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                 <tr>
                   <td><strong>Total</strong></td>
                   <td></td>
-                  {hasDates && (
-                    <>
-                      <td></td>
-                      <td></td>
-                    </>
-                  )}
+                  <td></td>
+                  <td></td>
+                  <td></td>
                   {years.map(y => (
                     <td key={y} className="right">
                       <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>

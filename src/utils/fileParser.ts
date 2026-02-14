@@ -160,7 +160,7 @@ export interface RevenueLineItem {
 function detectYearColumns(headers: string[]): { colIndex: number; year: number }[] {
   const result: { colIndex: number; year: number }[] = [];
   const yearRe = /\b(20[2-3]\d)\b/; // matches years 2020-2039
-  const excludePatterns = ['conso', 'consumed', 'cost', 'date', 'début', 'debut', 'start', 'fin', 'end', 'expiration', 'termination'];
+  const excludePatterns = ['conso', 'consumed', 'cost', 'date', 'début', 'debut', 'start', 'fin', 'end', 'expiration', 'termination', 'factur', 'invoice', 'délai', 'delai', 'delay'];
   for (let i = 0; i < headers.length; i++) {
     const nh = normalize(headers[i]);
     // Exclude columns that are clearly not revenue (costs, dates, etc.)
@@ -184,7 +184,33 @@ function classifyType(type: string): 'deploy' | 'run' | 'unknown' {
   return 'unknown';
 }
 
-/** Parse revenue file into detailed per-year line items, grouped by account+project+type */
+/** Add months to an ISO date string, returning a new ISO date string */
+function addMonths(isoDate: string, months: number): string {
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '';
+  d.setMonth(d.getMonth() + months);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Subtract days from an ISO date string */
+function subtractDays(isoDate: string, days: number): string {
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() - days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse revenue file into detailed per-year line items.
+ *  Each CSV row is either:
+ *  - License: has Date début (start) and Date fin (end)
+ *  - Setup: start = invoice date − payment delay; end = start + 4 months
+ *  Program column = project name. */
 export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -202,17 +228,22 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
 
         const headers = (rows[0] as string[]).map(h => (h || '').toString());
 
-        const accountCol = findColumn(headers, ['account', 'accounts', 'program', 'programme', 'customer', 'client', 'compte']);
-        if (accountCol === -1) { reject(new Error('Could not find account/program column')); return; }
+        const accountCol = findColumn(headers, ['account', 'accounts', 'customer', 'client', 'compte']);
+        if (accountCol === -1) { reject(new Error('Could not find account column')); return; }
 
-        const projectCol = findColumn(headers, ['project', 'name', 'projet']);
+        // Program = project
+        const projectCol = findColumn(headers, ['program', 'programme', 'project', 'name', 'projet']);
 
+        // Type column (optional — if missing, all rows are treated as 'unknown')
         const typeCol = findColumn(headers, ['type', 'category', 'catégorie', 'categorie', 'revenue type']);
-        if (typeCol === -1) { reject(new Error('Could not find "type" column (expected: type, category)')); return; }
 
-        // Date columns for licenses (optional) — use specific candidates to avoid matching unrelated columns
+        // License date columns
         const startDateCol = findColumn(headers, ['date début', 'date debut', 'start date', 'date de début', 'date de debut', 'début', 'debut']);
         const endDateCol = findColumn(headers, ['date fin', 'date de fin', 'end date', 'date de fin', 'expiration', 'termination']);
+
+        // Setup date columns: invoice date and payment delay
+        const invoiceDateCol = findColumn(headers, ['invoice date', 'date facture', 'date de facture', 'date facturation', 'facturation']);
+        const paymentDelayCol = findColumn(headers, ['payment delay', 'délai de paiement', 'delai de paiement', 'délai paiement', 'delai paiement', 'delay', 'délai', 'delai']);
 
         let yearCols = detectYearColumns(headers);
         // Fallback: if no year columns found, look for generic amount/CA columns and assign to current year
@@ -223,12 +254,11 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
           }
         }
         if (yearCols.length === 0) {
-          reject(new Error('Could not find any year columns (expected columns with years like 2025, 2026, 2027...)'));
+          reject(new Error('Could not find any year/amount columns (expected columns with years like 2025, 2026, or CA/amount)'));
           return;
         }
 
-        // Aggregate by account+project+type
-        const map = new Map<string, RevenueLineItem>();
+        const items: RevenueLineItem[] = [];
 
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i] as unknown[];
@@ -238,36 +268,48 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
           const account = cleanAccountName(rawAccount);
           if (!account) continue;
 
-          const project = projectCol !== -1 ? (row[projectCol] || '').toString().trim() : '';
-          const typeRaw = (row[typeCol] || '').toString();
-          const type = classifyType(typeRaw);
+          const project = projectCol !== -1 ? cleanAccountName((row[projectCol] || '').toString().trim()) : '';
+          const typeRaw = typeCol !== -1 ? (row[typeCol] || '').toString() : '';
+          const type = typeRaw ? classifyType(typeRaw) : 'unknown';
 
-          const rowStartDate = startDateCol !== -1 ? parseDate(row[startDateCol]) : '';
-          const rowEndDate = endDateCol !== -1 ? parseDate(row[endDateCol]) : '';
+          // Compute dates based on type
+          let rowStartDate = '';
+          let rowEndDate = '';
 
-          const key = `${account}|||${project}|||${type}`;
-          if (!map.has(key)) {
-            map.set(key, { account, project, type, yearAmounts: {}, startDate: rowStartDate, endDate: rowEndDate });
-          }
-          const entry = map.get(key)!;
-
-          // For dates: keep earliest start and latest end when aggregating
-          if (rowStartDate && (!entry.startDate || rowStartDate < entry.startDate)) {
-            entry.startDate = rowStartDate;
-          }
-          if (rowEndDate && (!entry.endDate || rowEndDate > entry.endDate)) {
-            entry.endDate = rowEndDate;
+          if (type === 'run' || (type === 'unknown' && startDateCol !== -1)) {
+            // License: use Date début / Date fin directly
+            rowStartDate = startDateCol !== -1 ? parseDate(row[startDateCol]) : '';
+            rowEndDate = endDateCol !== -1 ? parseDate(row[endDateCol]) : '';
           }
 
+          if (type === 'deploy') {
+            // Setup: start = invoice date − payment delay (in days); end = start + 4 months
+            const invoiceDate = invoiceDateCol !== -1 ? parseDate(row[invoiceDateCol]) : '';
+            const delayDays = paymentDelayCol !== -1 ? parseNum(row[paymentDelayCol]) : 0;
+
+            if (invoiceDate) {
+              rowStartDate = delayDays > 0 ? subtractDays(invoiceDate, delayDays) : invoiceDate;
+              rowEndDate = addMonths(rowStartDate, 4);
+            }
+          }
+
+          // Collect year amounts
+          const yearAmounts: Record<number, number> = {};
           for (const { colIndex, year } of yearCols) {
             const amount = parseNum(row[colIndex]);
             if (amount !== 0) {
-              entry.yearAmounts[year] = (entry.yearAmounts[year] || 0) + amount;
+              yearAmounts[year] = (yearAmounts[year] || 0) + amount;
             }
           }
+
+          // Skip rows with no amounts
+          const hasAmount = Object.values(yearAmounts).some(v => v !== 0);
+          if (!hasAmount) continue;
+
+          items.push({ account, project, type, yearAmounts, startDate: rowStartDate, endDate: rowEndDate });
         }
 
-        resolve(Array.from(map.values()));
+        resolve(items);
       } catch (err) {
         reject(err);
       }
