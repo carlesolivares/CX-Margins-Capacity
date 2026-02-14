@@ -119,8 +119,22 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
 
   const capacityForChart = hasTeamChanges ? simCapacity : baseCapacity;
 
-  /** Auto-balance: scale each member's quarterly days so total capacity ≈ demand per quarter */
+  const MAX_JH_PER_QUARTER = 55;
+  const ADJUSTABLE_ROLES: Role[] = ['Dev', 'FDE'];
+
+  /** Auto-balance: add capacity only via Dev & FDE, protect past JH, cap at 55 JH/person/quarter */
   const autoBalance = () => {
+    const today = new Date();
+    const currentQ = Math.floor(today.getMonth() / 3); // 0-based: 0=Q1, 1=Q2…
+
+    // Fraction of the current quarter already elapsed (frozen)
+    const qStartMonth = currentQ * 3;
+    const qStart = new Date(today.getFullYear(), qStartMonth, 1);
+    const qEnd = new Date(today.getFullYear(), qStartMonth + 3, 0); // last day of quarter
+    const totalQDays = (qEnd.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    const elapsedQDays = (today.getTime() - qStart.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    const frozenPct = Math.min(1, elapsedQDays / totalQDays);
+
     // Sum demand per quarter from monthly demand data
     const demandQ = [0, 0, 0, 0];
     for (let m = 0; m < 12; m++) {
@@ -128,7 +142,8 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
       demandQ[q] += demandByMonth[m]?.total || 0;
     }
 
-    // Sum current capacity per quarter from simTeam
+    // Sum current capacity per quarter
+    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
     const capQ = [0, 0, 0, 0];
     for (const m of simTeam) {
       capQ[0] += m.q1Days;
@@ -137,21 +152,37 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
       capQ[3] += m.q4Days;
     }
 
-    // Compute scaling factor per quarter
-    const scales = capQ.map((cap, q) => {
-      if (cap <= 0) return 1; // can't scale from zero
-      return demandQ[q] / cap;
-    });
+    // Calculate deficit per quarter (only positive = need more capacity)
+    const deficitQ = demandQ.map((d, q) => Math.max(0, d - capQ[q]));
 
-    // Apply scaling to each member's quarterly days
+    // For current quarter, only the remaining portion can be adjusted
+    if (currentQ >= 0 && currentQ < 4) {
+      deficitQ[currentQ] = Math.max(0, deficitQ[currentQ] * (1 - frozenPct));
+    }
+    // Past quarters: no adjustment possible
+    for (let q = 0; q < currentQ; q++) {
+      deficitQ[q] = 0;
+    }
+
+    // Distribute deficit across Dev & FDE members only
+    const adjustableMembers = simTeam.filter(m => ADJUSTABLE_ROLES.includes(m.role));
+    const adjustableCount = adjustableMembers.length;
+
+    if (adjustableCount === 0) return; // nothing to adjust
+
     setSimTeam(prev =>
-      prev.map(m => ({
-        ...m,
-        q1Days: Math.round(m.q1Days * scales[0]),
-        q2Days: Math.round(m.q2Days * scales[1]),
-        q3Days: Math.round(m.q3Days * scales[2]),
-        q4Days: Math.round(m.q4Days * scales[3]),
-      })),
+      prev.map(m => {
+        if (!ADJUSTABLE_ROLES.includes(m.role)) return m; // non-adjustable roles unchanged
+
+        const updated = { ...m };
+        for (let q = 0; q < 4; q++) {
+          const key = qKeys[q];
+          const extraPerPerson = deficitQ[q] / adjustableCount;
+          const proposed = m[key] + extraPerPerson;
+          updated[key] = Math.round(Math.min(MAX_JH_PER_QUARTER, proposed));
+        }
+        return updated;
+      }),
     );
   };
 
