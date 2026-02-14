@@ -3,7 +3,7 @@ import type { RevenueLineItem } from '../utils/fileParser';
 import { parseRevenueFileDetailed } from '../utils/fileParser';
 import { FileUpload } from '../components/FileUpload';
 import { formatCurrency } from '../utils/margins';
-import { Receipt, Trash2 } from 'lucide-react';
+import { Receipt, Trash2, Filter } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface RevenueProps {
@@ -22,7 +22,17 @@ interface DisplayRow {
   endDate: string;
 }
 
-type SortKey = 'account' | 'project' | 'type' | 'total' | 'startDate' | 'endDate' | number;
+interface ConsolidatedRow {
+  account: string;
+  project: string;
+  yearAmounts: Record<number, number>;
+  total: number;
+  lines: number;
+}
+
+type ViewMode = 'detail' | 'consolidated';
+type TypeFilter = 'all' | 'deploy' | 'run';
+type SortKey = 'account' | 'project' | 'type' | 'total' | 'startDate' | 'endDate' | 'lines' | number;
 
 function typeLabel(t: string): string {
   if (t === 'run') return 'License';
@@ -31,6 +41,8 @@ function typeLabel(t: string): string {
 }
 
 export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenueProps) {
+  const [view, setView] = useState<ViewMode>('detail');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('account');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -42,9 +54,15 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     importRevenue(parsed);
   };
 
+  // Filter by type
+  const filteredItems = useMemo(() => {
+    if (typeFilter === 'all') return revenueItems;
+    return revenueItems.filter(item => item.type === typeFilter);
+  }, [revenueItems, typeFilter]);
+
   // Build display rows (one per imported line)
   const displayRows = useMemo((): DisplayRow[] => {
-    return revenueItems.map(item => {
+    return filteredItems.map(item => {
       const total = Object.values(item.yearAmounts).reduce((s, v) => s + v, 0);
       return {
         account: item.account,
@@ -56,18 +74,48 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
         endDate: item.endDate || '',
       };
     });
-  }, [revenueItems]);
+  }, [filteredItems]);
 
-  // Collect all years
+  // Build consolidated rows (one per program)
+  const consolidatedRows = useMemo((): ConsolidatedRow[] => {
+    const map = new Map<string, ConsolidatedRow>();
+    for (const item of filteredItems) {
+      const key = item.project || item.account;
+      const existing = map.get(key);
+      if (existing) {
+        for (const [y, v] of Object.entries(item.yearAmounts)) {
+          existing.yearAmounts[Number(y)] = (existing.yearAmounts[Number(y)] || 0) + v;
+        }
+        existing.total += Object.values(item.yearAmounts).reduce((s, v) => s + v, 0);
+        existing.lines += 1;
+        // Use first account found
+      } else {
+        const yearAmounts: Record<number, number> = {};
+        for (const [y, v] of Object.entries(item.yearAmounts)) {
+          yearAmounts[Number(y)] = v;
+        }
+        map.set(key, {
+          account: item.account,
+          project: item.project,
+          yearAmounts,
+          total: Object.values(item.yearAmounts).reduce((s, v) => s + v, 0),
+          lines: 1,
+        });
+      }
+    }
+    return [...map.values()];
+  }, [filteredItems]);
+
+  // Collect all years (from filtered items)
   const years = useMemo(() => {
     const set = new Set<number>();
-    for (const row of displayRows) {
-      for (const y of Object.keys(row.yearAmounts)) {
+    for (const item of filteredItems) {
+      for (const y of Object.keys(item.yearAmounts)) {
         set.add(Number(y));
       }
     }
     return [...set].sort();
-  }, [displayRows]);
+  }, [filteredItems]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -86,13 +134,34 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
         cmp = (a.startDate || '').localeCompare(b.startDate || '');
       } else if (sortKey === 'endDate') {
         cmp = (a.endDate || '').localeCompare(b.endDate || '');
-      } else {
+      } else if (typeof sortKey === 'number') {
         cmp = (a.yearAmounts[sortKey] || 0) - (b.yearAmounts[sortKey] || 0);
       }
       return sortAsc ? cmp : -cmp;
     });
     return copy;
   }, [displayRows, sortKey, sortAsc]);
+
+  // Sort consolidated
+  const sortedConsolidated = useMemo(() => {
+    const copy = [...consolidatedRows];
+    copy.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'account') {
+        cmp = a.account.localeCompare(b.account);
+      } else if (sortKey === 'project') {
+        cmp = a.project.localeCompare(b.project);
+      } else if (sortKey === 'total') {
+        cmp = a.total - b.total;
+      } else if (sortKey === 'lines') {
+        cmp = a.lines - b.lines;
+      } else if (typeof sortKey === 'number') {
+        cmp = (a.yearAmounts[sortKey] || 0) - (b.yearAmounts[sortKey] || 0);
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    return copy;
+  }, [consolidatedRows, sortKey, sortAsc]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -140,9 +209,20 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
           <div className="section-header">
             <h3>
               <Receipt size={18} />
-              Revenue ({displayRows.length} lines)
+              Revenue ({view === 'detail' ? `${displayRows.length} lines` : `${consolidatedRows.length} programs`})
             </h3>
             <div className="header-actions">
+              <div className="toggle-group">
+                <button className={`toggle-btn ${view === 'detail' ? 'active' : ''}`} onClick={() => setView('detail')}>Detail</button>
+                <button className={`toggle-btn ${view === 'consolidated' ? 'active' : ''}`} onClick={() => setView('consolidated')}>Consolidated</button>
+              </div>
+              <div className="toggle-group">
+                <button className={`toggle-btn ${typeFilter === 'all' ? 'active' : ''}`} onClick={() => setTypeFilter('all')}>
+                  <Filter size={12} /> All
+                </button>
+                <button className={`toggle-btn ${typeFilter === 'deploy' ? 'active' : ''}`} onClick={() => setTypeFilter('deploy')}>Setup</button>
+                <button className={`toggle-btn ${typeFilter === 'run' ? 'active' : ''}`} onClick={() => setTypeFilter('run')}>License</button>
+              </div>
               <button className="btn btn-danger" onClick={clearRevenue}>
                 <Trash2 size={14} /> Clear
               </button>
@@ -169,60 +249,111 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
             </div>
           )}
 
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
-                  <th onClick={() => toggleSort('project')}>Program{indicator('project')}</th>
-                  <th onClick={() => toggleSort('type')}>Type{indicator('type')}</th>
-                  <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
-                  <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
-                  {years.map(y => (
-                    <th key={y} className="right" onClick={() => toggleSort(y)}>
-                      {y}{indicator(y)}
-                    </th>
-                  ))}
-                  <th className="right" onClick={() => toggleSort('total')}>Total{indicator('total')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((row, i) => (
-                  <tr key={i}>
-                    <td className="customer-name">{row.account}</td>
-                    <td>{row.project || '—'}</td>
-                    <td><span className={`badge ${row.type === 'run' ? 'healthy' : row.type === 'deploy' ? 'warning' : ''}`}>{typeLabel(row.type)}</span></td>
-                    <td className="date-cell">{row.startDate || '—'}</td>
-                    <td className="date-cell">{row.endDate || '—'}</td>
-                    {years.map(y => {
-                      const val = row.yearAmounts[y] || 0;
-                      return (
-                        <td key={y} className="right">
-                          {val > 0 ? formatCurrency(val) : '—'}
-                        </td>
-                      );
-                    })}
-                    <td className="right"><strong>{formatCurrency(row.total)}</strong></td>
+          {view === 'detail' ? (
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
+                    <th onClick={() => toggleSort('project')}>Program{indicator('project')}</th>
+                    <th onClick={() => toggleSort('type')}>Type{indicator('type')}</th>
+                    <th className="date-cell" onClick={() => toggleSort('startDate')}>Début{indicator('startDate')}</th>
+                    <th className="date-cell" onClick={() => toggleSort('endDate')}>Fin{indicator('endDate')}</th>
+                    {years.map(y => (
+                      <th key={y} className="right" onClick={() => toggleSort(y)}>
+                        {y}{indicator(y)}
+                      </th>
+                    ))}
+                    <th className="right" onClick={() => toggleSort('total')}>Total{indicator('total')}</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td><strong>Total</strong></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  {years.map(y => (
-                    <td key={y} className="right">
-                      <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
-                    </td>
+                </thead>
+                <tbody>
+                  {sorted.map((row, i) => (
+                    <tr key={i}>
+                      <td className="customer-name">{row.account}</td>
+                      <td>{row.project || '—'}</td>
+                      <td><span className={`badge ${row.type === 'run' ? 'healthy' : row.type === 'deploy' ? 'warning' : ''}`}>{typeLabel(row.type)}</span></td>
+                      <td className="date-cell">{row.startDate || '—'}</td>
+                      <td className="date-cell">{row.endDate || '—'}</td>
+                      {years.map(y => {
+                        const val = row.yearAmounts[y] || 0;
+                        return (
+                          <td key={y} className="right">
+                            {val > 0 ? formatCurrency(val) : '—'}
+                          </td>
+                        );
+                      })}
+                      <td className="right"><strong>{formatCurrency(row.total)}</strong></td>
+                    </tr>
                   ))}
-                  <td className="right"><strong>{formatCurrency(yearTotals.grandTotal)}</strong></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td><strong>Total</strong></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    {years.map(y => (
+                      <td key={y} className="right">
+                        <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
+                      </td>
+                    ))}
+                    <td className="right"><strong>{formatCurrency(yearTotals.grandTotal)}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleSort('account')}>Account{indicator('account')}</th>
+                    <th onClick={() => toggleSort('project')}>Program{indicator('project')}</th>
+                    <th className="right" onClick={() => toggleSort('lines')}>Lines{indicator('lines')}</th>
+                    {years.map(y => (
+                      <th key={y} className="right" onClick={() => toggleSort(y)}>
+                        {y}{indicator(y)}
+                      </th>
+                    ))}
+                    <th className="right" onClick={() => toggleSort('total')}>Total{indicator('total')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedConsolidated.map((row, i) => (
+                    <tr key={i}>
+                      <td className="customer-name">{row.account}</td>
+                      <td>{row.project || '—'}</td>
+                      <td className="right">{row.lines}</td>
+                      {years.map(y => {
+                        const val = row.yearAmounts[y] || 0;
+                        return (
+                          <td key={y} className="right">
+                            {val > 0 ? formatCurrency(val) : '—'}
+                          </td>
+                        );
+                      })}
+                      <td className="right"><strong>{formatCurrency(row.total)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td><strong>Total</strong></td>
+                    <td></td>
+                    <td className="right"><strong>{displayRows.length}</strong></td>
+                    {years.map(y => (
+                      <td key={y} className="right">
+                        <strong>{formatCurrency(yearTotals.byYear[y] || 0)}</strong>
+                      </td>
+                    ))}
+                    <td className="right"><strong>{formatCurrency(yearTotals.grandTotal)}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </>
       )}
     </div>
