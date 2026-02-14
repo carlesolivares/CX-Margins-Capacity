@@ -88,15 +88,13 @@ export function Report({ projects, members, targets }: ReportProps) {
     };
   }, [projects, members, targets]);
 
-  // Financial overview: available money vs team cost
+  // Financial overview: available money (cost budget based on target margins) vs team cost
   const financials = useMemo(() => {
     const deployRev = deployAnalysis.totalRev;
-    const deployCost = deployAnalysis.totalProj;
-    const deployAvailable = deployRev - deployCost;
+    const deployAvailable = deployRev * (1 - targets.deployMargin / 100);
 
     const runRev = runAnalysis.totalRev;
-    const runCost = runAnalysis.totalProj;
-    const runAvailable = runRev - runCost;
+    const runAvailable = runRev * (1 - targets.runMargin / 100);
 
     const combinedAvailable = deployAvailable + runAvailable;
 
@@ -108,11 +106,11 @@ export function Report({ projects, members, targets }: ReportProps) {
     const netResult = combinedAvailable - teamCost;
 
     return {
-      deployRev, deployCost, deployAvailable,
-      runRev, runCost, runAvailable,
+      deployRev, deployAvailable,
+      runRev, runAvailable,
       combinedAvailable, teamCost, netResult,
     };
-  }, [deployAnalysis, runAnalysis, members]);
+  }, [deployAnalysis, runAnalysis, members, targets]);
 
   // Stable projects (both deploy and RUN margins meet targets)
   const stableProjects = useMemo(() => {
@@ -188,7 +186,7 @@ export function Report({ projects, members, targets }: ReportProps) {
       <div className="report-section">
         <h3><DollarSign size={18} /> Financial Overview</h3>
         <p className="report-hint">
-          Available money (revenue minus projected cost) compared to total team cost.
+          Available money = (1 &minus; target margin%) &times; revenue. This is the cost budget you can spend while meeting margin targets.
         </p>
 
         <div className="table-wrapper">
@@ -197,7 +195,7 @@ export function Report({ projects, members, targets }: ReportProps) {
               <tr>
                 <th></th>
                 <th className="right">Revenue</th>
-                <th className="right">Projected Cost</th>
+                <th className="right">Target Margin</th>
                 <th className="right">Available Money</th>
               </tr>
             </thead>
@@ -205,7 +203,7 @@ export function Report({ projects, members, targets }: ReportProps) {
               <tr>
                 <td><strong>Deploy</strong></td>
                 <td className="right">{formatCurrency(financials.deployRev)}</td>
-                <td className="right">{formatCurrency(financials.deployCost)}</td>
+                <td className="right">{targets.deployMargin}%</td>
                 <td className="right">
                   <span className={financials.deployAvailable >= 0 ? 'text-success' : 'text-danger'}>
                     {formatCurrency(financials.deployAvailable)}
@@ -215,7 +213,7 @@ export function Report({ projects, members, targets }: ReportProps) {
               <tr>
                 <td><strong>RUN</strong></td>
                 <td className="right">{formatCurrency(financials.runRev)}</td>
-                <td className="right">{formatCurrency(financials.runCost)}</td>
+                <td className="right">{targets.runMargin}%</td>
                 <td className="right">
                   <span className={financials.runAvailable >= 0 ? 'text-success' : 'text-danger'}>
                     {formatCurrency(financials.runAvailable)}
@@ -227,7 +225,7 @@ export function Report({ projects, members, targets }: ReportProps) {
               <tr>
                 <td><strong>Combined</strong></td>
                 <td className="right"><strong>{formatCurrency(financials.deployRev + financials.runRev)}</strong></td>
-                <td className="right"><strong>{formatCurrency(financials.deployCost + financials.runCost)}</strong></td>
+                <td className="right"></td>
                 <td className="right">
                   <strong className={financials.combinedAvailable >= 0 ? 'text-success' : 'text-danger'}>
                     {formatCurrency(financials.combinedAvailable)}
@@ -244,7 +242,7 @@ export function Report({ projects, members, targets }: ReportProps) {
             <span className={`report-kpi-value ${financials.combinedAvailable >= 0 ? 'healthy' : 'unhealthy'}`}>
               {formatCurrency(financials.combinedAvailable)}
             </span>
-            <span className="report-kpi-sub">Deploy + RUN margin</span>
+            <span className="report-kpi-sub">(1&minus;{targets.deployMargin}%) &times; Deploy + (1&minus;{targets.runMargin}%) &times; RUN</span>
           </div>
           <div className="report-kpi-card">
             <span className="report-kpi-label">Team Cost</span>
