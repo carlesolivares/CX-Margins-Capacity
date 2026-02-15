@@ -427,6 +427,11 @@
   background: rgba(99, 102, 241, 0.1) !important;
 }
 
+.row-selected td {
+  background: rgba(99, 102, 241, 0.12) !important;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
 .customer-name {
   font-weight: 600;
 }

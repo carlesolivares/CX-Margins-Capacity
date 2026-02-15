@@ -41,11 +41,15 @@ function typeLabel(t: string): string {
 }
 
 export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenueProps) {
-  const [view, setView] = useState<ViewMode>('detail');
+  const [view, setView] = useState<ViewMode>('consolidated');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('account');
   const [sortAsc, setSortAsc] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+
+  const switchView = (v: ViewMode) => { setView(v); setSelectedRow(null); };
+  const switchFilter = (f: TypeFilter) => { setTypeFilter(f); setSelectedRow(null); };
 
   const handleFile = async (file: File) => {
     const parsed = await parseRevenueFileDetailed(file);
@@ -178,7 +182,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     return <span className="sort-indicator">{sortAsc ? ' ▲' : ' ▼'}</span>;
   };
 
-  // Year totals
+  // Year totals (all rows)
   const yearTotals = useMemo(() => {
     const totals: Record<number, number> = {};
     let grandTotal = 0;
@@ -193,6 +197,28 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
     }
     return { byYear: totals, grandTotal };
   }, [displayRows, years]);
+
+  // Chart data: if a row is selected, show only that row; otherwise show totals
+  const chartAmounts = useMemo(() => {
+    if (selectedRow === null) return yearTotals;
+    const activeRows = view === 'detail' ? sorted : sortedConsolidated;
+    const row = activeRows[selectedRow];
+    if (!row) return yearTotals;
+    const byYear: Record<number, number> = {};
+    for (const y of years) {
+      byYear[y] = row.yearAmounts[y] || 0;
+    }
+    const grandTotal = Object.values(byYear).reduce((s, v) => s + v, 0);
+    return { byYear, grandTotal };
+  }, [selectedRow, yearTotals, view, sorted, sortedConsolidated, years]);
+
+  const selectedRowLabel = useMemo(() => {
+    if (selectedRow === null) return null;
+    const activeRows = view === 'detail' ? sorted : sortedConsolidated;
+    const row = activeRows[selectedRow];
+    if (!row) return null;
+    return row.project || row.account;
+  }, [selectedRow, view, sorted, sortedConsolidated]);
 
   return (
     <div className="page">
@@ -214,15 +240,15 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
             </h3>
             <div className="header-actions">
               <div className="toggle-group">
-                <button className={`toggle-btn ${view === 'detail' ? 'active' : ''}`} onClick={() => setView('detail')}>Detail</button>
-                <button className={`toggle-btn ${view === 'consolidated' ? 'active' : ''}`} onClick={() => setView('consolidated')}>Consolidated</button>
+                <button className={`toggle-btn ${view === 'detail' ? 'active' : ''}`} onClick={() => switchView('detail')}>Detail</button>
+                <button className={`toggle-btn ${view === 'consolidated' ? 'active' : ''}`} onClick={() => switchView('consolidated')}>Consolidated</button>
               </div>
               <div className="toggle-group">
-                <button className={`toggle-btn ${typeFilter === 'all' ? 'active' : ''}`} onClick={() => setTypeFilter('all')}>
+                <button className={`toggle-btn ${typeFilter === 'all' ? 'active' : ''}`} onClick={() => switchFilter('all')}>
                   <Filter size={12} /> All
                 </button>
-                <button className={`toggle-btn ${typeFilter === 'deploy' ? 'active' : ''}`} onClick={() => setTypeFilter('deploy')}>Setup</button>
-                <button className={`toggle-btn ${typeFilter === 'run' ? 'active' : ''}`} onClick={() => setTypeFilter('run')}>License</button>
+                <button className={`toggle-btn ${typeFilter === 'deploy' ? 'active' : ''}`} onClick={() => switchFilter('deploy')}>Setup</button>
+                <button className={`toggle-btn ${typeFilter === 'run' ? 'active' : ''}`} onClick={() => switchFilter('run')}>License</button>
               </div>
               <button className="btn btn-danger" onClick={clearRevenue}>
                 <Trash2 size={14} /> Clear
@@ -231,9 +257,20 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
           </div>
 
           {years.length > 0 && (() => {
-            const chartData = years.map(y => ({ year: String(y), yearNum: y, amount: yearTotals.byYear[y] || 0 }));
+            const chartData = years.map(y => ({ year: String(y), yearNum: y, amount: chartAmounts.byYear[y] || 0 }));
             return (
               <div className="chart-container chart-full-width">
+                {selectedRowLabel && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4, fontSize: 13, color: '#4338ca' }}>
+                    <strong>{selectedRowLabel}</strong>
+                    <button
+                      onClick={() => setSelectedRow(null)}
+                      style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}
+                    >
+                      Show all
+                    </button>
+                  </div>
+                )}
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart
                     data={chartData}
@@ -255,7 +292,7 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                       {chartData.map((entry) => (
                         <Cell
                           key={entry.year}
-                          fill={selectedYear === entry.yearNum ? '#4338ca' : '#6366f1'}
+                          fill={selectedYear === entry.yearNum ? '#4338ca' : (selectedRow !== null ? '#818cf8' : '#6366f1')}
                           opacity={selectedYear && selectedYear !== entry.yearNum ? 0.4 : 1}
                         />
                       ))}
@@ -263,10 +300,10 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                   </BarChart>
                 </ResponsiveContainer>
                 <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 4 }}>
-                  Grand Total: <strong>{formatCurrency(yearTotals.grandTotal)}</strong>
+                  {selectedRow !== null ? 'Selected' : 'Grand'} Total: <strong>{formatCurrency(chartAmounts.grandTotal)}</strong>
                   {selectedYear && (
                     <span style={{ marginLeft: 16 }}>
-                      {selectedYear}: <strong>{formatCurrency(yearTotals.byYear[selectedYear] || 0)}</strong>
+                      {selectedYear}: <strong>{formatCurrency(chartAmounts.byYear[selectedYear] || 0)}</strong>
                       <button
                         onClick={() => setSelectedYear(null)}
                         style={{ marginLeft: 8, background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 13 }}
@@ -300,7 +337,12 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                 </thead>
                 <tbody>
                   {sorted.map((row, i) => (
-                    <tr key={i}>
+                    <tr
+                      key={i}
+                      onClick={() => setSelectedRow(prev => prev === i ? null : i)}
+                      className={selectedRow === i ? 'row-selected' : ''}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <td className="customer-name">{row.account}</td>
                       <td>{row.project || '—'}</td>
                       <td><span className={`badge ${row.type === 'run' ? 'healthy' : row.type === 'deploy' ? 'warning' : ''}`}>{typeLabel(row.type)}</span></td>
@@ -353,7 +395,12 @@ export function Revenue({ revenueItems, importRevenue, clearRevenue }: RevenuePr
                 </thead>
                 <tbody>
                   {sortedConsolidated.map((row, i) => (
-                    <tr key={i}>
+                    <tr
+                      key={i}
+                      onClick={() => setSelectedRow(prev => prev === i ? null : i)}
+                      className={selectedRow === i ? 'row-selected' : ''}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <td className="customer-name">{row.account}</td>
                       <td>{row.project || '—'}</td>
                       <td className="right">{row.lines}</td>
