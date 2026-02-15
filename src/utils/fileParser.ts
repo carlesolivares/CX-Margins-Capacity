@@ -242,8 +242,17 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
         const endDateCol = findColumn(headers, ['date fin', 'date de fin', 'end date', 'date de fin', 'expiration', 'termination']);
 
         // Setup date columns: invoice date and payment delay
-        const invoiceDateCol = findColumn(headers, ['invoice date', 'date facture', 'date de facture', 'date facturation', 'facturation']);
-        const paymentDelayCol = findColumn(headers, ['payment delay', 'délai de paiement', 'delai de paiement', 'délai paiement', 'delai paiement', 'delay', 'délai', 'delai']);
+        const invoiceDateCol = findColumn(headers, ['invoice date', 'date facture', 'date de facture', 'date facturation', 'facturation', 'facture']);
+        const paymentDelayCol = findColumn(headers, ['payment delay', 'délai de paiement', 'delai de paiement', 'délai paiement', 'delai paiement', 'payment term', 'delay', 'délai', 'delai', 'terme', 'jours']);
+
+        // Collect all date-like column indices for fallback scanning
+        const allDateCols: number[] = [];
+        headers.forEach((h, idx) => {
+          const nh = h.toLowerCase().trim();
+          if (nh.includes('date') || nh.includes('début') || nh.includes('debut') || nh.includes('fin') || nh.includes('factur') || nh.includes('invoice')) {
+            allDateCols.push(idx);
+          }
+        });
 
         let yearCols = detectYearColumns(headers);
         // Fallback: if no year columns found, look for generic amount/CA columns and assign to current year
@@ -290,10 +299,21 @@ export function parseRevenueFileDetailed(file: File): Promise<RevenueLineItem[]>
             if (invoiceDate) {
               rowStartDate = delayDays > 0 ? subtractDays(invoiceDate, delayDays) : invoiceDate;
               rowEndDate = addMonths(rowStartDate, 4);
-            } else if (startDateCol !== -1) {
+            } else if (startDateCol !== -1 && parseDate(row[startDateCol])) {
               // Fallback: use Date début as start, compute end = start + 4 months
               rowStartDate = parseDate(row[startDateCol]);
-              rowEndDate = rowStartDate ? addMonths(rowStartDate, 4) : '';
+              rowEndDate = addMonths(rowStartDate, 4);
+            } else {
+              // Last resort: scan all date columns for any date value on this row
+              for (const col of allDateCols) {
+                const d = parseDate(row[col]);
+                if (d && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+                  const baseDate = delayDays > 0 ? subtractDays(d, delayDays) : d;
+                  rowStartDate = baseDate;
+                  rowEndDate = addMonths(baseDate, 4);
+                  break;
+                }
+              }
             }
           }
 
