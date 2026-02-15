@@ -3,7 +3,8 @@ import type { TeamMember, Role } from '../types';
 import { ROLES } from '../types';
 import { calculateTeamCapacity, formatCurrency } from '../utils/margins';
 import { useSort } from '../hooks/useSort';
-import { Trash2, Plus, Users, Edit2, Check, X } from 'lucide-react';
+import { Trash2, Plus, Users, Edit2, Check, X, Save, FolderOpen } from 'lucide-react';
+import type { SavedTeam } from '../store/useStore';
 
 interface TeamProps {
   members: TeamMember[];
@@ -11,6 +12,10 @@ interface TeamProps {
   updateMember: (m: TeamMember) => void;
   deleteMember: (id: string) => void;
   clearMembers: () => void;
+  savedTeams: SavedTeam[];
+  saveTeam: (name: string, members: TeamMember[]) => void;
+  deleteSavedTeam: (name: string) => void;
+  loadTeam: (members: TeamMember[]) => void;
 }
 
 const EMPTY_FORM = {
@@ -23,10 +28,12 @@ const EMPTY_FORM = {
   dailyRate: 400,
 };
 
-export function Team({ members, addMember, updateMember, deleteMember, clearMembers }: TeamProps) {
+export function Team({ members, addMember, updateMember, deleteMember, clearMembers, savedTeams, saveTeam, deleteSavedTeam, loadTeam }: TeamProps) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<TeamMember | null>(null);
+  const [saveName, setSaveName] = useState('');
+  const [showSaveInput, setShowSaveInput] = useState(false);
 
   const capacity = calculateTeamCapacity(members);
 
@@ -55,6 +62,19 @@ export function Team({ members, addMember, updateMember, deleteMember, clearMemb
       updateMember(editForm);
     }
     cancelEdit();
+  };
+
+  const handleSaveTeam = () => {
+    const name = saveName.trim();
+    if (!name || members.length === 0) return;
+    saveTeam(name, members);
+    setSaveName('');
+    setShowSaveInput(false);
+  };
+
+  const handleLoadTeam = (name: string) => {
+    const team = savedTeams.find(t => t.name === name);
+    if (team) loadTeam(team.members);
   };
 
   return (
@@ -170,11 +190,78 @@ export function Team({ members, addMember, updateMember, deleteMember, clearMemb
       {/* Team table */}
       <div className="section-header">
         <h3>Team Members</h3>
-        {members.length > 0 && (
-          <button className="btn btn-danger" onClick={clearMembers}>
-            <Trash2 size={14} /> Clear All
-          </button>
-        )}
+        <div className="header-actions">
+          {savedTeams.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FolderOpen size={14} style={{ color: '#64748b' }} />
+              <select
+                className="input"
+                value=""
+                onChange={e => {
+                  if (e.target.value) handleLoadTeam(e.target.value);
+                  e.target.value = '';
+                }}
+                style={{ minWidth: 160, fontSize: 13, padding: '4px 8px' }}
+              >
+                <option value="">Load saved team...</option>
+                {savedTeams.map(t => (
+                  <option key={t.name} value={t.name}>
+                    {t.name} ({t.members.length})
+                  </option>
+                ))}
+              </select>
+              {savedTeams.length > 0 && (
+                <select
+                  className="input"
+                  value=""
+                  onChange={e => {
+                    if (e.target.value && confirm(`Delete saved team "${e.target.value}"?`)) {
+                      deleteSavedTeam(e.target.value);
+                    }
+                    e.target.value = '';
+                  }}
+                  style={{ minWidth: 50, fontSize: 13, padding: '4px 8px', color: '#ef4444' }}
+                >
+                  <option value="">Delete...</option>
+                  {savedTeams.map(t => (
+                    <option key={t.name} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {members.length > 0 && (
+            <>
+              {showSaveInput ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="Team name"
+                    value={saveName}
+                    onChange={e => setSaveName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveTeam()}
+                    style={{ width: 140, fontSize: 13, padding: '4px 8px' }}
+                    autoFocus
+                  />
+                  <button className="btn btn-primary" onClick={handleSaveTeam} disabled={!saveName.trim()}>
+                    <Save size={14} /> Save
+                  </button>
+                  <button className="btn" onClick={() => { setShowSaveInput(false); setSaveName(''); }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button className="btn btn-primary" onClick={() => setShowSaveInput(true)}>
+                  <Save size={14} /> Save Team
+                </button>
+              )}
+              <button className="btn btn-danger" onClick={clearMembers}>
+                <Trash2 size={14} /> Clear All
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {members.length > 0 ? (

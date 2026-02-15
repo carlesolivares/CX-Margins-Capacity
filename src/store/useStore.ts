@@ -8,6 +8,13 @@ const TEAM_KEY = 'cx-app-team';
 const TARGETS_KEY = 'cx-app-targets';
 const TOGGLES_KEY = 'cx-app-project-toggles';
 const REVENUE_KEY = 'cx-app-revenue';
+const SAVED_TEAMS_KEY = 'cx-app-saved-teams';
+
+export interface SavedTeam {
+  name: string;
+  members: TeamMember[];
+  savedAt: string;
+}
 
 export interface ProjectToggle {
   deploy: boolean;
@@ -68,7 +75,9 @@ export function useTeamMembers() {
 
   const clearMembers = useCallback(() => { setMembers([]); }, []);
 
-  return { members, addMember, updateMember, deleteMember, clearMembers };
+  const loadMembers = useCallback((newMembers: TeamMember[]) => { setMembers(newMembers); }, []);
+
+  return { members, addMember, updateMember, deleteMember, clearMembers, loadMembers };
 }
 
 export function useTargets() {
@@ -152,4 +161,38 @@ export function useRevenueData() {
   const clearRevenue = useCallback(() => { setRevenueItems([]); }, []);
 
   return { revenueItems, importRevenue, clearRevenue };
+}
+
+export function useSavedTeams() {
+  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_TEAMS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(SAVED_TEAMS_KEY, JSON.stringify(savedTeams));
+  }, [savedTeams]);
+
+  const saveTeam = useCallback((name: string, members: TeamMember[]) => {
+    setSavedTeams(prev => {
+      const existing = prev.findIndex(t => t.name === name);
+      const entry: SavedTeam = { name, members: [...members], savedAt: new Date().toISOString() };
+      if (existing !== -1) {
+        const updated = [...prev];
+        updated[existing] = entry;
+        return updated;
+      }
+      return [...prev, entry];
+    });
+  }, []);
+
+  const deleteSavedTeam = useCallback((name: string) => {
+    setSavedTeams(prev => prev.filter(t => t.name !== name));
+  }, []);
+
+  return { savedTeams, saveTeam, deleteSavedTeam };
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProjectData, useTeamMembers, useTargets, useProjectToggles, useRevenueData } from './store/useStore';
+import { useProjectData, useTeamMembers, useTargets, useProjectToggles, useRevenueData, useSavedTeams } from './store/useStore';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
 import { Team } from './pages/Team';
@@ -17,10 +17,11 @@ type Page = 'dashboard' | 'projects' | 'team' | 'planning' | 'simulation' | 'pro
 function App() {
   const [page, setPage] = useState<Page>('dashboard');
   const { projects, importProjects, clearProjects, deleteProject } = useProjectData();
-  const { members, addMember, updateMember, deleteMember, clearMembers } = useTeamMembers();
+  const { members, addMember, updateMember, deleteMember, clearMembers, loadMembers } = useTeamMembers();
   const { targets, updateTargets } = useTargets();
   const { setToggle, getToggle, filteredProjects } = useProjectToggles(projects);
   const { revenueItems, importRevenue, clearRevenue } = useRevenueData();
+  const { savedTeams, saveTeam, deleteSavedTeam } = useSavedTeams();
 
   return (
     <div className="app">
@@ -134,6 +135,10 @@ function App() {
             updateMember={updateMember}
             deleteMember={deleteMember}
             clearMembers={clearMembers}
+            savedTeams={savedTeams}
+            saveTeam={saveTeam}
+            deleteSavedTeam={deleteSavedTeam}
+            loadTeam={loadMembers}
           />
         )}
         {page === 'planning' && <Planning projects={filteredProjects} />}
