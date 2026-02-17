@@ -522,14 +522,6 @@ function DemandCapacityTab({ projects, members, targets }: { projects: ProjectRo
         </ResponsiveContainer>
       </div>
 
-      {/* Quarterly JH tables */}
-      {deployQuarterly.length > 0 && (
-        <QuarterlyTable rows={deployQuarterly} title="Deploy JH by Quarter" />
-      )}
-      {runQuarterly.length > 0 && (
-        <QuarterlyTable rows={runQuarterly} title="RUN JH by Quarter" />
-      )}
-
       {/* Demand vs Capacity quarterly summary */}
       <h3>Demand vs Capacity by Quarter</h3>
       <div className="table-wrapper">
