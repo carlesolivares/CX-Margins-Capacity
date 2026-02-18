@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProjectData, useTeamMembers, useTargets, useProjectToggles, useRevenueData, useSavedTeams } from './store/useStore';
+import { useProjectData, useTeamMembers, useTargets, useProjectToggles, useRevenueData, useSavedTeams, useProjectUpdateDate } from './store/useStore';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
 import { Team } from './pages/Team';
@@ -22,6 +22,7 @@ function App() {
   const { setToggle, getToggle, filteredProjects } = useProjectToggles(projects);
   const { revenueItems, importRevenue, clearRevenue } = useRevenueData();
   const { savedTeams, saveTeam, deleteSavedTeam } = useSavedTeams();
+  const { updateDate, setToToday: setUpdateDateToToday } = useProjectUpdateDate();
 
   return (
     <div className="app">
@@ -126,6 +127,7 @@ function App() {
             clearProjects={clearProjects}
             deleteProject={deleteProject}
             targets={targets}
+            onImport={setUpdateDateToToday}
           />
         )}
         {page === 'team' && (
@@ -142,8 +144,8 @@ function App() {
           />
         )}
         {page === 'planning' && <Planning projects={filteredProjects} />}
-        {page === 'simulation' && <Simulation projects={filteredProjects} members={members} targets={targets} />}
-        {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} />}
+        {page === 'simulation' && <Simulation projects={filteredProjects} members={members} targets={targets} updateDate={updateDate} />}
+        {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} updateDate={updateDate} />}
         {page === 'revenue' && (
           <Revenue
             revenueItems={revenueItems}

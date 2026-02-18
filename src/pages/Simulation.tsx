@@ -56,9 +56,10 @@ interface SimulationProps {
   projects: ProjectRow[];
   members: TeamMember[];
   targets: Targets;
+  updateDate?: string;
 }
 
-export function Simulation({ projects, members, targets }: SimulationProps) {
+export function Simulation({ projects, members, targets, updateDate }: SimulationProps) {
   const [simProjects, setSimProjects] = useState<SimulatedProject[]>([]);
 
   // Simulated team: start from real members, allow edits and additions
@@ -97,8 +98,8 @@ export function Simulation({ projects, members, targets }: SimulationProps) {
   }, [projects, simProjects]);
 
   const demandByMonth = useMemo(
-    () => computeTotalDemandByMonth(allProjects, targets),
-    [allProjects, targets],
+    () => computeTotalDemandByMonth(allProjects, targets, 2026, updateDate),
+    [allProjects, targets, updateDate],
   );
   const simCapacity = useMemo(
     () => computeTeamCapacityByMonth(simTeamAsMembers),

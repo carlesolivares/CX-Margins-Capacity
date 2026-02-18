@@ -12,9 +12,10 @@ interface ProjectsProps {
   clearProjects: () => void;
   deleteProject: (id: string) => void;
   targets: Targets;
+  onImport?: () => void;
 }
 
-export function Projects({ projects, importProjects, clearProjects, deleteProject, targets }: ProjectsProps) {
+export function Projects({ projects, importProjects, clearProjects, deleteProject, targets, onImport }: ProjectsProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const handleFile = async (file: File) => {
@@ -23,6 +24,7 @@ export function Projects({ projects, importProjects, clearProjects, deleteProjec
       throw new Error('No valid project rows found in file');
     }
     importProjects(parsed);
+    onImport?.();
     setStatusFilter('all');
   };
 

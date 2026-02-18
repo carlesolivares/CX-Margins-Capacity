@@ -9,6 +9,7 @@ const TARGETS_KEY = 'cx-app-targets';
 const TOGGLES_KEY = 'cx-app-project-toggles';
 const REVENUE_KEY = 'cx-app-revenue';
 const SAVED_TEAMS_KEY = 'cx-app-saved-teams';
+const UPDATE_DATE_KEY = 'cx-app-project-update-date';
 
 export interface SavedTeam {
   name: string;
@@ -161,6 +162,28 @@ export function useRevenueData() {
   const clearRevenue = useCallback(() => { setRevenueItems([]); }, []);
 
   return { revenueItems, importRevenue, clearRevenue };
+}
+
+export function useProjectUpdateDate() {
+  const [updateDate, setUpdateDate] = useState<string>(() => {
+    try {
+      return localStorage.getItem(UPDATE_DATE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(UPDATE_DATE_KEY, updateDate);
+  }, [updateDate]);
+
+  const setToToday = useCallback(() => {
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setUpdateDate(iso);
+  }, []);
+
+  return { updateDate, setUpdateDate, setToToday };
 }
 
 export function useSavedTeams() {

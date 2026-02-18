@@ -1,6 +1,6 @@
 import type { ProjectRow, TeamMember, Targets } from '../types';
 import { DEFAULT_TARGETS } from '../types';
-import { deployEurToJH, runEurToJH } from './margins';
+import { deployEurToJH, runEurToJH, eurToJH } from './margins';
 
 /** Month key like "2026-01", "2026-02", etc. */
 export type MonthKey = string;
@@ -124,21 +124,57 @@ function spreadByMonthWithHypercare(totalJH: number, startDate: Date, endDate: D
 }
 
 /**
+ * Merge two month-keyed JH records by summing values.
+ */
+function mergeMonths(a: Record<MonthKey, number>, b: Record<MonthKey, number>): Record<MonthKey, number> {
+  const result = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    result[k] = (result[k] || 0) + v;
+  }
+  return result;
+}
+
+/**
  * For each project, compute Deploy JH spread by month (Phase 1: kickOff → goLive).
+ * When updateDate is provided, uses real consumption for past months and distributes
+ * remaining budget equally across future months.
  */
 export function computeDeploySimulation(
   projects: ProjectRow[],
   targets: Targets = DEFAULT_TARGETS,
+  updateDate?: string,
 ): { perProject: ProjectMonthlyJH[]; aggregated: MonthlyAggregate[] } {
   const perProject: ProjectMonthlyJH[] = [];
+  const splitDate = updateDate ? parseDate(updateDate) : null;
 
   for (const p of projects) {
     const start = parseDate(p.kickOff);
     const end = parseDate(p.goLive) || DEFAULT_GO_LIVE;
     if (!start || p.deployRevenue <= 0) continue;
 
-    const totalJH = deployEurToJH(p.deployRevenue, targets.deployMargin);
-    const months = spreadByMonth(totalJH, start, end);
+    const budgetJH = deployEurToJH(p.deployRevenue, targets.deployMargin);
+    let months: Record<MonthKey, number>;
+
+    if (splitDate && splitDate > start && p.deployConso > 0) {
+      // Consumption-based: split at update date
+      const consoJH = eurToJH(p.deployConso);
+      const remainingJH = Math.max(0, budgetJH - consoJH);
+
+      // Past: spread consumed JH from kickOff → updateDate
+      const pastEnd = splitDate < end ? splitDate : end;
+      const pastMonths = spreadByMonth(consoJH, start, pastEnd);
+
+      // Future: spread remaining JH from updateDate → goLive
+      if (splitDate < end && remainingJH > 0) {
+        const futureMonths = spreadByMonth(remainingJH, splitDate, end);
+        months = mergeMonths(pastMonths, futureMonths);
+      } else {
+        months = pastMonths;
+      }
+    } else {
+      // No update date or no consumption: spread budget evenly (legacy)
+      months = spreadByMonth(budgetJH, start, end);
+    }
 
     if (Object.keys(months).length > 0) {
       perProject.push({
@@ -155,18 +191,18 @@ export function computeDeploySimulation(
 
 /**
  * For each project, compute RUN JH spread by month (Phase 2: goLive → Dec 31 of current year).
- * If go-live is before Jan 1 of the current year, the project is already fully in RUN:
- *   - Start is clamped to Jan 1 (hypercare period is past)
- *   - JH is spread evenly (flat) across 2026 months only
- * If go-live is in the current year, hypercare weighting applies from go-live.
+ * When updateDate is provided, uses real consumption for past months and distributes
+ * remaining budget equally across future months.
  */
 export function computeRunSimulation(
   projects: ProjectRow[],
   targets: Targets = DEFAULT_TARGETS,
+  updateDate?: string,
 ): { perProject: ProjectMonthlyJH[]; aggregated: MonthlyAggregate[] } {
   const currentYear = new Date().getFullYear();
   const yearStart = new Date(currentYear, 0, 1); // Jan 1
   const yearEnd = new Date(currentYear, 11, 31); // Dec 31
+  const splitDate = updateDate ? parseDate(updateDate) : null;
 
   const perProject: ProjectMonthlyJH[] = [];
 
@@ -174,15 +210,32 @@ export function computeRunSimulation(
     const goLive = parseDate(p.goLive) || DEFAULT_GO_LIVE;
     if (p.runRevenue <= 0) continue;
 
-    const totalJH = runEurToJH(p.runRevenue, targets.runMargin);
+    const runStart = goLive < yearStart ? yearStart : goLive;
+    const budgetJH = runEurToJH(p.runRevenue, targets.runMargin);
     let months: Record<MonthKey, number>;
 
-    if (goLive < yearStart) {
-      // Go-live was before this year → already in RUN, no hypercare, spread evenly from Jan 1
-      months = spreadByMonth(totalJH, yearStart, yearEnd);
+    if (splitDate && splitDate > runStart && p.runConso > 0) {
+      // Consumption-based: split at update date
+      const consoJH = eurToJH(p.runConso);
+      const remainingJH = Math.max(0, budgetJH - consoJH);
+
+      // Past: spread consumed JH from runStart → updateDate
+      const pastEnd = splitDate < yearEnd ? splitDate : yearEnd;
+      const pastMonths = spreadByMonth(consoJH, runStart, pastEnd);
+
+      // Future: spread remaining JH equally from updateDate → yearEnd
+      if (splitDate < yearEnd && remainingJH > 0) {
+        const futureMonths = spreadByMonth(remainingJH, splitDate, yearEnd);
+        months = mergeMonths(pastMonths, futureMonths);
+      } else {
+        months = pastMonths;
+      }
+    } else if (goLive < yearStart) {
+      // No consumption data, go-live before this year → spread evenly
+      months = spreadByMonth(budgetJH, yearStart, yearEnd);
     } else {
-      // Go-live is this year → hypercare applies from go-live date
-      months = spreadByMonthWithHypercare(totalJH, goLive, yearEnd);
+      // No consumption data, go-live this year → hypercare
+      months = spreadByMonthWithHypercare(budgetJH, goLive, yearEnd);
     }
 
     if (Object.keys(months).length > 0) {
@@ -336,9 +389,10 @@ export function computeTotalDemandByMonth(
   projects: ProjectRow[],
   targets: Targets = DEFAULT_TARGETS,
   year: number = 2026,
+  updateDate?: string,
 ): MonthlyAggregate[] {
-  const deploy = computeDeploySimulation(projects, targets);
-  const run = computeRunSimulation(projects, targets);
+  const deploy = computeDeploySimulation(projects, targets, updateDate);
+  const run = computeRunSimulation(projects, targets, updateDate);
 
   return Array.from({ length: 12 }, (_, m) => {
     const mk = monthKey(year, m);

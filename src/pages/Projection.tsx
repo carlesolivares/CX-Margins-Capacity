@@ -24,9 +24,10 @@ interface ProjectionProps {
   projects: ProjectRow[];
   members: TeamMember[];
   targets: Targets;
+  updateDate?: string;
 }
 
-export function Projection({ projects, members, targets }: ProjectionProps) {
+export function Projection({ projects, members, targets, updateDate }: ProjectionProps) {
   const [tab, setTab] = useState<ProjTab>('margins');
   const [runMarginOverrides, setRunMarginOverrides] = useState<Record<string, number>>({});
   const [showOverridePanel, setShowOverridePanel] = useState(false);
@@ -68,12 +69,12 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
 
   // Deploy & RUN simulations (stacked bar charts)
   const deploySim = useMemo(
-    () => computeDeploySimulation(projects, targets),
-    [projects, targets],
+    () => computeDeploySimulation(projects, targets, updateDate),
+    [projects, targets, updateDate],
   );
   const runSim = useMemo(
-    () => computeRunSimulation(projects, targets),
-    [projects, targets],
+    () => computeRunSimulation(projects, targets, updateDate),
+    [projects, targets, updateDate],
   );
 
   if (projects.length === 0) {
@@ -109,6 +110,7 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
       <p className="settings-desc">
         Extrapolates current consumption to the end of each phase based on elapsed time.
         Deploy: Kick-off &rarr; Go-live. RUN: Go-live &rarr; Dec 31, 2026.
+        {updateDate && <><br />Data as of: <strong>{updateDate}</strong>. Consumed JH is real up to this date; remaining budget is spread equally after.</>}
       </p>
 
       {/* Tab navigation */}
@@ -268,7 +270,7 @@ export function Projection({ projects, members, targets }: ProjectionProps) {
       )}
 
       {tab === 'demand' && (
-        <DemandCapacityTab projects={projects} members={members} targets={targets} />
+        <DemandCapacityTab projects={projects} members={members} targets={targets} updateDate={updateDate} />
       )}
     </div>
   );
@@ -434,12 +436,12 @@ function RunMarginOverridePanel({
   );
 }
 
-function DemandCapacityTab({ projects, members, targets }: { projects: ProjectRow[]; members: TeamMember[]; targets: Targets }) {
-  const demand = useMemo(() => computeTotalDemandByMonth(projects, targets), [projects, targets]);
+function DemandCapacityTab({ projects, members, targets, updateDate }: { projects: ProjectRow[]; members: TeamMember[]; targets: Targets; updateDate?: string }) {
+  const demand = useMemo(() => computeTotalDemandByMonth(projects, targets, 2026, updateDate), [projects, targets, updateDate]);
   const capacity = useMemo(() => computeTeamCapacityByMonth(members), [members]);
 
-  const deploySim = useMemo(() => computeDeploySimulation(projects, targets), [projects, targets]);
-  const runSim = useMemo(() => computeRunSimulation(projects, targets), [projects, targets]);
+  const deploySim = useMemo(() => computeDeploySimulation(projects, targets, updateDate), [projects, targets, updateDate]);
+  const runSim = useMemo(() => computeRunSimulation(projects, targets, updateDate), [projects, targets, updateDate]);
   const deployQuarterly = useMemo(() => aggregateQuarterly(deploySim.perProject), [deploySim]);
   const runQuarterly = useMemo(() => aggregateQuarterly(runSim.perProject), [runSim]);
 
