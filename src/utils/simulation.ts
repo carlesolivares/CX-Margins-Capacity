@@ -422,8 +422,8 @@ export interface MonthlyCashflow {
 
 /**
  * Compute monthly Revenue vs Consumption (EUR) for cashflow charting.
- * Revenue is spread proportionally across months using project date ranges.
- * Consumption is derived from the JH demand simulation × JH rate.
+ * Revenue: one-shot at kick-off month (deploy), one-shot 2 months after go-live (RUN).
+ * Consumption: real consumption up to updateDate, then projected (from JH simulation × rate).
  * Supports optional account filter.
  */
 export function computeCashflowByMonth(
@@ -435,37 +435,30 @@ export function computeCashflowByMonth(
 ): MonthlyCashflow[] {
   const filtered = account ? projects.filter(p => p.account === account) : projects;
   const currentYear = year;
-  const yearStart = new Date(currentYear, 0, 1);
-  const yearEnd = new Date(currentYear, 11, 31);
 
-  // 1. Revenue by month: spread each project's deploy + run revenue across their date ranges
+  // 1. Revenue by month: one-shot events (no spreading)
   const revByMonth: Record<MonthKey, number> = {};
   for (let m = 0; m < 12; m++) revByMonth[monthKey(currentYear, m)] = 0;
 
   for (const p of filtered) {
-    // Deploy revenue: kickOff → goLive
+    // Deploy revenue: one-shot at kick-off month
     if (p.deployRevenue > 0) {
       const start = parseDate(p.kickOff);
-      const end = parseDate(p.goLive) || DEFAULT_GO_LIVE;
       if (start) {
-        const spread = spreadByMonth(p.deployRevenue, start, end);
-        for (const [k, v] of Object.entries(spread)) {
-          if (revByMonth[k] !== undefined) revByMonth[k] += v;
-        }
+        const mk = monthKey(start.getFullYear(), start.getMonth());
+        if (revByMonth[mk] !== undefined) revByMonth[mk] += p.deployRevenue;
       }
     }
-    // RUN revenue: max(goLive, yearStart) → yearEnd
+    // RUN revenue: one-shot 2 months after go-live
     if (p.runRevenue > 0) {
       const goLive = parseDate(p.goLive) || DEFAULT_GO_LIVE;
-      const runStart = goLive < yearStart ? yearStart : goLive;
-      const spread = spreadByMonth(p.runRevenue, runStart, yearEnd);
-      for (const [k, v] of Object.entries(spread)) {
-        if (revByMonth[k] !== undefined) revByMonth[k] += v;
-      }
+      const runDate = new Date(goLive.getFullYear(), goLive.getMonth() + 2, 1);
+      const mk = monthKey(runDate.getFullYear(), runDate.getMonth());
+      if (revByMonth[mk] !== undefined) revByMonth[mk] += p.runRevenue;
     }
   }
 
-  // 2. Consumption by month: use JH demand × JH rate
+  // 2. Consumption by month: real conso up to updateDate, then projected via JH simulation × rate
   const deploySim = computeDeploySimulation(filtered, targets, updateDate);
   const runSim = computeRunSimulation(filtered, targets, updateDate);
   const jhRate = 400; // DEFAULT_JH_RATE
