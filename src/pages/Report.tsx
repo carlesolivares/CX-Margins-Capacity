@@ -175,7 +175,7 @@ export function Report({ projects, members, targets }: ReportProps) {
       {/* ── 1. Status Summary ── */}
       <div className="report-section">
         <h3><FileText size={18} /> Portfolio Summary</h3>
-        <div className="report-kpi-grid">
+        <div className="report-kpi-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
           <div className="report-kpi-card">
             <span className="report-kpi-label">Total Projects</span>
             <span className="report-kpi-value">{projects.length}</span>
@@ -193,6 +193,22 @@ export function Report({ projects, members, targets }: ReportProps) {
               {runAnalysis.globalMargin}%
             </span>
             <span className="report-kpi-sub">Target: {targets.runMargin}%</span>
+          </div>
+          <div className="report-kpi-card">
+            <span className="report-kpi-label">Total Margin</span>
+            {(() => {
+              const totalRev = deployAnalysis.totalRev + runAnalysis.totalRev;
+              const totalProj = deployAnalysis.totalProj + runAnalysis.totalProj;
+              const totalMargin = totalRev > 0 ? Math.round(((totalRev - totalProj) / totalRev) * 1000) / 10 : 0;
+              return (
+                <>
+                  <span className={`report-kpi-value ${totalMargin >= 0 ? 'healthy' : 'unhealthy'}`}>
+                    {totalMargin}%
+                  </span>
+                  <span className="report-kpi-sub">Deploy + RUN combined</span>
+                </>
+              );
+            })()}
           </div>
           <div className="report-kpi-card">
             <span className="report-kpi-label">Capacity Balance</span>
@@ -416,27 +432,36 @@ export function Report({ projects, members, targets }: ReportProps) {
                   <th>Project</th>
                   <th className="right">Deploy Margin</th>
                   <th className="right">RUN Margin</th>
+                  <th className="right">Total Margin</th>
                   <th className="right">Total Revenue</th>
                 </tr>
               </thead>
               <tbody>
-                {stableProjects.map(p => (
-                  <tr key={`${p.account}-${p.project}`}>
-                    <td className="customer-name">{p.account}</td>
-                    <td>{p.project || '\u2014'}</td>
-                    <td className="right">
-                      {p.deployRevenue > 0 ? (
-                        <span className="badge healthy">{p.deployMargin}%</span>
-                      ) : '\u2014'}
-                    </td>
-                    <td className="right">
-                      {p.runRevenue > 0 ? (
-                        <span className="badge healthy">{p.runMargin}%</span>
-                      ) : '\u2014'}
-                    </td>
-                    <td className="right">{formatCurrency(p.deployRevenue + p.runRevenue)}</td>
-                  </tr>
-                ))}
+                {stableProjects.map(p => {
+                  const totalRev = p.deployRevenue + p.runRevenue;
+                  const totalCost = p.deployCost + p.runCost;
+                  const totalMargin = totalRev > 0 ? Math.round(((totalRev - totalCost) / totalRev) * 1000) / 10 : 0;
+                  return (
+                    <tr key={`${p.account}-${p.project}`}>
+                      <td className="customer-name">{p.account}</td>
+                      <td>{p.project || '\u2014'}</td>
+                      <td className="right">
+                        {p.deployRevenue > 0 ? (
+                          <span className="badge healthy">{p.deployMargin}%</span>
+                        ) : '\u2014'}
+                      </td>
+                      <td className="right">
+                        {p.runRevenue > 0 ? (
+                          <span className="badge healthy">{p.runMargin}%</span>
+                        ) : '\u2014'}
+                      </td>
+                      <td className="right">
+                        <span className={`badge ${totalMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{totalMargin}%</span>
+                      </td>
+                      <td className="right">{formatCurrency(totalRev)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

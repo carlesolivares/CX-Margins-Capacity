@@ -43,10 +43,10 @@ export function Dashboard({ projects, members, targets }: DashboardProps) {
   // Filter out deploy-complete (2025 go-live) projects for deploy views
   const deployFiltered = useMemo(() => filtered.filter(p => !isDeployComplete(p)), [filtered]);
 
-  // Account-level margins for KPI cards (deploy uses deployFiltered, run uses all)
+  // Account-level margins for KPI cards and charts
   const accountMargins = calculateMargins(filtered, 1, targets);
-  const deployProjectMargins = calculateProjectMargins(deployFiltered, 1, targets);
-  // Project-level margins for charts and table
+  const deployAccountMargins = calculateMargins(deployFiltered, 1, targets);
+  // Project-level margins for table
   const projectMargins = calculateProjectMargins(filtered, 1, targets);
   const capacity = calculateTeamCapacity(members);
   const consumed = getConsumedStats(filtered, targets);
@@ -86,10 +86,10 @@ export function Dashboard({ projects, members, targets }: DashboardProps) {
         <KPICards margins={accountMargins} capacity={capacity} consumed={consumed} targets={targets} totalDemandJH={totalDemandJH} />
       </Section>
 
-      <Section title="Margin Charts">
+      <Section title="Margin Charts (by Account)">
         <div className="charts-row">
-          <MarginChart margins={deployProjectMargins} type="deployment" targets={targets} />
-          <MarginChart margins={projectMargins} type="run" targets={targets} />
+          <MarginChart margins={deployAccountMargins} type="deployment" targets={targets} />
+          <MarginChart margins={accountMargins} type="run" targets={targets} />
         </div>
       </Section>
 
