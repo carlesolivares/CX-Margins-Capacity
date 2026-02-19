@@ -86,11 +86,8 @@ export function Dashboard({ projects, members, targets }: DashboardProps) {
         <KPICards margins={accountMargins} capacity={capacity} consumed={consumed} targets={targets} totalDemandJH={totalDemandJH} />
       </Section>
 
-      <Section title="Global Margin (by Account)">
-        <MarginChart margins={accountMargins} type="global" targets={targets} />
-      </Section>
-
       <Section title="Margin Charts (by Account)">
+        <MarginChart margins={accountMargins} type="global" targets={targets} />
         <div className="charts-row">
           <MarginChart margins={deployAccountMargins} type="deployment" targets={targets} />
           <MarginChart margins={accountMargins} type="run" targets={targets} />
