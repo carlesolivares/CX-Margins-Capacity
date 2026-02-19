@@ -20,6 +20,15 @@ import {
 
 type ProjTab = 'margins' | 'deploy-sim' | 'run-sim' | 'demand';
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Convert ISO date "2026-02-19" → short month label "Feb" */
+function dateToMonthLabel(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const m = Number(iso.split('-')[1]);
+  return m >= 1 && m <= 12 ? SHORT_MONTHS[m - 1] : null;
+}
+
 interface ProjectionProps {
   projects: ProjectRow[];
   members: TeamMember[];
@@ -104,13 +113,23 @@ export function Projection({ projects, members, targets, updateDate }: Projectio
     : 0;
   const runHealthyCount = runProjects.filter(p => p.runMarginProjected >= targets.runMargin).length;
 
+  const updateMonthLabel = dateToMonthLabel(updateDate);
+
   return (
     <div className="page">
-      <h2>Projection</h2>
+      <div className="sim-header">
+        <h2 style={{ marginBottom: 0 }}>Projection</h2>
+        {updateDate && (
+          <div className="update-date-badge">
+            <span className="update-date-label">Data as of</span>
+            <span className="update-date-value">{updateDate}</span>
+          </div>
+        )}
+      </div>
       <p className="settings-desc">
         Extrapolates current consumption to the end of each phase based on elapsed time.
         Deploy: Kick-off &rarr; Go-live. RUN: Go-live &rarr; Dec 31, 2026.
-        {updateDate && <><br />Data as of: <strong>{updateDate}</strong>. Consumed JH is real up to this date; remaining budget is spread equally after.</>}
+        {updateDate && <> Consumed JH is real up to the update date; remaining budget is spread equally after.</>}
       </p>
 
       {/* Tab navigation */}
@@ -256,6 +275,7 @@ export function Projection({ projects, members, targets, updateDate }: Projectio
           perProject={deploySim.perProject}
           aggregated={deploySim.aggregated}
           emptyMessage="No projects with valid kick-off and go-live dates and deploy revenue."
+          updateMonthLabel={updateMonthLabel}
         />
       )}
 
@@ -266,11 +286,12 @@ export function Projection({ projects, members, targets, updateDate }: Projectio
           perProject={runSim.perProject}
           aggregated={runSim.aggregated}
           emptyMessage="No projects with valid go-live date and RUN revenue."
+          updateMonthLabel={updateMonthLabel}
         />
       )}
 
       {tab === 'demand' && (
-        <DemandCapacityTab projects={projects} members={members} targets={targets} updateDate={updateDate} />
+        <DemandCapacityTab projects={projects} members={members} targets={targets} updateDate={updateDate} updateMonthLabel={updateMonthLabel} />
       )}
     </div>
   );
@@ -436,7 +457,7 @@ function RunMarginOverridePanel({
   );
 }
 
-function DemandCapacityTab({ projects, members, targets, updateDate }: { projects: ProjectRow[]; members: TeamMember[]; targets: Targets; updateDate?: string }) {
+function DemandCapacityTab({ projects, members, targets, updateDate, updateMonthLabel }: { projects: ProjectRow[]; members: TeamMember[]; targets: Targets; updateDate?: string; updateMonthLabel?: string | null }) {
   const demand = useMemo(() => computeTotalDemandByMonth(projects, targets, 2026, updateDate), [projects, targets, updateDate]);
   const capacity = useMemo(() => computeTeamCapacityByMonth(members), [members]);
 
@@ -502,6 +523,9 @@ function DemandCapacityTab({ projects, members, targets, updateDate }: { project
             <Legend />
             <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
+            {updateMonthLabel && (
+              <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -520,6 +544,9 @@ function DemandCapacityTab({ projects, members, targets, updateDate }: { project
             <Legend />
             <Area dataKey="accumCapacity" name="Accumulated Capacity" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} />
             <Area dataKey="accumDemand" name="Accumulated Demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+            {updateMonthLabel && (
+              <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -658,9 +685,10 @@ interface DeployRunTabProps {
   perProject: ProjectMonthlyJH[];
   aggregated: MonthlyAggregate[];
   emptyMessage: string;
+  updateMonthLabel?: string | null;
 }
 
-function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage }: DeployRunTabProps) {
+function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, updateMonthLabel }: DeployRunTabProps) {
   if (perProject.length === 0) {
     return (
       <>
@@ -705,6 +733,9 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage }:
             {projectEntries.map(entry => (
               <Bar key={entry.id} dataKey={entry.id} name={entry.id} stackId="projects" fill={entry.color} />
             ))}
+            {updateMonthLabel && (
+              <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+            )}
           </BarChart>
         </ResponsiveContainer>
       </div>

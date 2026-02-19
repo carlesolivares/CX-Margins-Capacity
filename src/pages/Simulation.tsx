@@ -11,9 +11,17 @@ import {
 import type { MonthlyAggregate } from '../utils/simulation';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ComposedChart, Line,
+  ResponsiveContainer, ComposedChart, Line, ReferenceLine,
 } from 'recharts';
 import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download } from 'lucide-react';
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function dateToMonthLabel(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const m = Number(iso.split('-')[1]);
+  return m >= 1 && m <= 12 ? SHORT_MONTHS[m - 1] : null;
+}
 
 interface SimulatedProject {
   id: string;
@@ -254,7 +262,15 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
 
   return (
     <div className="page">
-      <h2>Simulation</h2>
+      <div className="sim-header">
+        <h2 style={{ marginBottom: 0 }}>Simulation</h2>
+        {updateDate && (
+          <div className="update-date-badge">
+            <span className="update-date-label">Data as of</span>
+            <span className="update-date-value">{updateDate}</span>
+          </div>
+        )}
+      </div>
       <p className="settings-desc">
         Simulate capacity changes by editing team members or adding hypothetical projects. Changes here are not saved.
       </p>
@@ -279,7 +295,7 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
           )}
         </div>
       </div>
-      <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} />
+      <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} updateMonthLabel={dateToMonthLabel(updateDate)} />
 
       {/* Simulated Projects Section */}
       <div className="sim-header">
@@ -570,7 +586,7 @@ function AddSimProjectForm({ onAdd }: { onAdd: (sp: SimulatedProject) => void })
   );
 }
 
-function DemandCapacityChart({ demand, capacity }: { demand: MonthlyAggregate[]; capacity: MonthlyAggregate[] }) {
+function DemandCapacityChart({ demand, capacity, updateMonthLabel }: { demand: MonthlyAggregate[]; capacity: MonthlyAggregate[]; updateMonthLabel?: string | null }) {
   const chartData = demand.map(d => {
     const cAgg = capacity.find(a => a.month === d.month);
     return { month: d.label, demand: d.total, capacity: cAgg?.total || 0 };
@@ -591,6 +607,9 @@ function DemandCapacityChart({ demand, capacity }: { demand: MonthlyAggregate[];
           <Legend />
           <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
           <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
+          {updateMonthLabel && (
+            <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
