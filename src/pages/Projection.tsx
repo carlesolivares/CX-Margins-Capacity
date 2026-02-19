@@ -690,58 +690,71 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
 }
 
 function CashflowTab({ projects }: { projects: ProjectRow[] }) {
-  const cashflowData = useMemo(() => {
-    // Group by account
-    const accountMap = new Map<string, { revenue: number; conso: number; deployRevenue: number; deployConso: number; runRevenue: number; runConso: number }>();
+  const [selectedAccount, setSelectedAccount] = useState<string>('__global__');
 
+  const cashflowData = useMemo(() => {
+    const accountMap = new Map<string, { revenue: number; conso: number }>();
     for (const p of projects) {
-      const existing = accountMap.get(p.account) || { revenue: 0, conso: 0, deployRevenue: 0, deployConso: 0, runRevenue: 0, runConso: 0 };
-      existing.deployRevenue += p.deployRevenue;
-      existing.deployConso += p.deployConso;
-      existing.runRevenue += p.runRevenue;
-      existing.runConso += p.runConso;
+      const existing = accountMap.get(p.account) || { revenue: 0, conso: 0 };
       existing.revenue += p.deployRevenue + p.runRevenue;
       existing.conso += p.deployConso + p.runConso;
       accountMap.set(p.account, existing);
     }
-
     return [...accountMap.entries()]
       .map(([account, data]) => ({
         account,
-        ...data,
+        revenue: data.revenue,
+        conso: data.conso,
         cashflow: data.revenue - data.conso,
-        deployCashflow: data.deployRevenue - data.deployConso,
-        runCashflow: data.runRevenue - data.runConso,
         margin: data.revenue > 0 ? Math.round(((data.revenue - data.conso) / data.revenue) * 1000) / 10 : 0,
       }))
       .sort((a, b) => b.cashflow - a.cashflow);
   }, [projects]);
 
+  const accounts = useMemo(() => cashflowData.map(r => r.account), [cashflowData]);
+
   const totals = useMemo(() => {
-    const t = { revenue: 0, conso: 0, cashflow: 0, deployRevenue: 0, deployConso: 0, deployCashflow: 0, runRevenue: 0, runConso: 0, runCashflow: 0 };
+    const t = { revenue: 0, conso: 0, cashflow: 0 };
     for (const row of cashflowData) {
       t.revenue += row.revenue;
       t.conso += row.conso;
       t.cashflow += row.cashflow;
-      t.deployRevenue += row.deployRevenue;
-      t.deployConso += row.deployConso;
-      t.deployCashflow += row.deployCashflow;
-      t.runRevenue += row.runRevenue;
-      t.runConso += row.runConso;
-      t.runCashflow += row.runCashflow;
     }
     return { ...t, margin: t.revenue > 0 ? Math.round(((t.revenue - t.conso) / t.revenue) * 1000) / 10 : 0 };
   }, [cashflowData]);
 
-  // Chart data for the bar chart
-  const chartData = useMemo(() =>
-    cashflowData.map(row => ({
-      name: row.account,
-      revenue: row.revenue,
-      conso: row.conso,
-      cashflow: row.cashflow,
-    })),
-  [cashflowData]);
+  // KPI values based on selection
+  const kpi = useMemo(() => {
+    if (selectedAccount === '__global__') return totals;
+    const row = cashflowData.find(r => r.account === selectedAccount);
+    return row || { revenue: 0, conso: 0, cashflow: 0, margin: 0 };
+  }, [selectedAccount, cashflowData, totals]);
+
+  // Chart: global shows all accounts; per-account shows that account's projects
+  const chartData = useMemo(() => {
+    if (selectedAccount === '__global__') {
+      return cashflowData.map(row => ({
+        name: row.account,
+        revenue: row.revenue,
+        conso: row.conso,
+        cashflow: row.cashflow,
+      }));
+    }
+    // Per-account: show individual projects
+    return projects
+      .filter(p => p.account === selectedAccount)
+      .map(p => {
+        const rev = p.deployRevenue + p.runRevenue;
+        const conso = p.deployConso + p.runConso;
+        return {
+          name: p.project || p.account,
+          revenue: rev,
+          conso,
+          cashflow: rev - conso,
+        };
+      })
+      .sort((a, b) => b.cashflow - a.cashflow);
+  }, [selectedAccount, cashflowData, projects]);
 
   if (cashflowData.length === 0) {
     return (
@@ -754,39 +767,57 @@ function CashflowTab({ projects }: { projects: ProjectRow[] }) {
 
   return (
     <>
+      {/* Account selector */}
+      <div className="sim-header" style={{ marginBottom: 16 }}>
+        <div className="filter-group">
+          <select
+            value={selectedAccount}
+            onChange={e => setSelectedAccount(e.target.value)}
+            className="filter-select"
+          >
+            <option value="__global__">Global ({accounts.length} accounts)</option>
+            {accounts.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* KPI summary */}
       <div className="projection-global" style={{ marginBottom: 24 }}>
         <div className="projection-global-card">
-          <h4>Cashflow Summary (Revenue &minus; Consumption)</h4>
+          <h4>
+            {selectedAccount === '__global__' ? 'Global' : selectedAccount} &mdash; Cashflow (Revenue &minus; Consumption)
+          </h4>
           <div className="projection-kpi-row">
             <div className="projection-kpi">
-              <span className="projection-kpi-label">Total Revenue</span>
-              <span className="projection-kpi-value">{formatCurrency(totals.revenue)}</span>
+              <span className="projection-kpi-label">Revenue</span>
+              <span className="projection-kpi-value">{formatCurrency(kpi.revenue)}</span>
             </div>
             <div className="projection-kpi">
-              <span className="projection-kpi-label">Total Consumption</span>
-              <span className="projection-kpi-value">{formatCurrency(totals.conso)}</span>
+              <span className="projection-kpi-label">Consumption</span>
+              <span className="projection-kpi-value">{formatCurrency(kpi.conso)}</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Cashflow</span>
-              <span className={`projection-kpi-value ${totals.cashflow >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {formatCurrency(totals.cashflow)}
+              <span className={`projection-kpi-value ${kpi.cashflow >= 0 ? 'healthy' : 'unhealthy'}`}>
+                {formatCurrency(kpi.cashflow)}
               </span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Margin</span>
-              <span className={`projection-kpi-value ${totals.margin >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {totals.margin}%
+              <span className={`projection-kpi-value ${kpi.margin >= 0 ? 'healthy' : 'unhealthy'}`}>
+                {kpi.margin}%
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Cashflow bar chart per account */}
-      <h3>Cashflow by Account</h3>
+      {/* Cashflow bar chart */}
+      <h3>{selectedAccount === '__global__' ? 'Cashflow by Account' : `Cashflow by Project — ${selectedAccount}`}</h3>
       <div className="chart-container chart-full-width">
-        <ResponsiveContainer width="100%" height={Math.max(300, cashflowData.length * 32)}>
+        <ResponsiveContainer width="100%" height={Math.max(300, chartData.length * 40)}>
           <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 140, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis type="number" tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
@@ -804,82 +835,51 @@ function CashflowTab({ projects }: { projects: ProjectRow[] }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Detailed table */}
-      <h3>Cashflow Detail by Account</h3>
+      {/* Table */}
+      <h3>{selectedAccount === '__global__' ? 'Cashflow Detail by Account' : `Project Detail — ${selectedAccount}`}</h3>
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Account</th>
-              <th className="right">Deploy Revenue</th>
-              <th className="right">Deploy Conso</th>
-              <th className="right">Deploy Cashflow</th>
-              <th className="right">RUN Revenue</th>
-              <th className="right">RUN Conso</th>
-              <th className="right">RUN Cashflow</th>
-              <th className="right">Total Revenue</th>
-              <th className="right">Total Conso</th>
+              <th>{selectedAccount === '__global__' ? 'Account' : 'Project'}</th>
+              <th className="right">Revenue</th>
+              <th className="right">Consumption</th>
               <th className="right">Cashflow</th>
               <th className="right">Margin</th>
             </tr>
           </thead>
           <tbody>
-            {cashflowData.map(row => (
-              <tr key={row.account}>
-                <td className="customer-name">{row.account}</td>
-                <td className="right">{formatCurrency(row.deployRevenue)}</td>
-                <td className="right">{formatCurrency(row.deployConso)}</td>
-                <td className="right">
-                  <span className={row.deployCashflow >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(row.deployCashflow)}
-                  </span>
-                </td>
-                <td className="right">{formatCurrency(row.runRevenue)}</td>
-                <td className="right">{formatCurrency(row.runConso)}</td>
-                <td className="right">
-                  <span className={row.runCashflow >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(row.runCashflow)}
-                  </span>
-                </td>
-                <td className="right"><strong>{formatCurrency(row.revenue)}</strong></td>
-                <td className="right"><strong>{formatCurrency(row.conso)}</strong></td>
-                <td className="right">
-                  <strong className={row.cashflow >= 0 ? 'text-success' : 'text-danger'}>
-                    {formatCurrency(row.cashflow)}
-                  </strong>
-                </td>
-                <td className="right">
-                  <span className={`badge ${row.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{row.margin}%</span>
-                </td>
-              </tr>
-            ))}
+            {chartData.map(row => {
+              const margin = row.revenue > 0 ? Math.round(((row.revenue - row.conso) / row.revenue) * 1000) / 10 : 0;
+              return (
+                <tr key={row.name}>
+                  <td className="customer-name">{row.name}</td>
+                  <td className="right">{formatCurrency(row.revenue)}</td>
+                  <td className="right">{formatCurrency(row.conso)}</td>
+                  <td className="right">
+                    <strong className={row.cashflow >= 0 ? 'text-success' : 'text-danger'}>
+                      {formatCurrency(row.cashflow)}
+                    </strong>
+                  </td>
+                  <td className="right">
+                    <span className={`badge ${margin >= 0 ? 'healthy' : 'unhealthy'}`}>{margin}%</span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr>
-              <td><strong>Total ({cashflowData.length})</strong></td>
-              <td className="right"><strong>{formatCurrency(totals.deployRevenue)}</strong></td>
-              <td className="right"><strong>{formatCurrency(totals.deployConso)}</strong></td>
+              <td><strong>Total ({chartData.length})</strong></td>
+              <td className="right"><strong>{formatCurrency(kpi.revenue)}</strong></td>
+              <td className="right"><strong>{formatCurrency(kpi.conso)}</strong></td>
               <td className="right">
-                <strong className={totals.deployCashflow >= 0 ? 'text-success' : 'text-danger'}>
-                  {formatCurrency(totals.deployCashflow)}
-                </strong>
-              </td>
-              <td className="right"><strong>{formatCurrency(totals.runRevenue)}</strong></td>
-              <td className="right"><strong>{formatCurrency(totals.runConso)}</strong></td>
-              <td className="right">
-                <strong className={totals.runCashflow >= 0 ? 'text-success' : 'text-danger'}>
-                  {formatCurrency(totals.runCashflow)}
-                </strong>
-              </td>
-              <td className="right"><strong>{formatCurrency(totals.revenue)}</strong></td>
-              <td className="right"><strong>{formatCurrency(totals.conso)}</strong></td>
-              <td className="right">
-                <strong className={totals.cashflow >= 0 ? 'text-success' : 'text-danger'}>
-                  {formatCurrency(totals.cashflow)}
+                <strong className={kpi.cashflow >= 0 ? 'text-success' : 'text-danger'}>
+                  {formatCurrency(kpi.cashflow)}
                 </strong>
               </td>
               <td className="right">
-                <strong><span className={`badge ${totals.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{totals.margin}%</span></strong>
+                <strong><span className={`badge ${kpi.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{kpi.margin}%</span></strong>
               </td>
             </tr>
           </tfoot>
