@@ -408,6 +408,99 @@ export function computeTotalDemandByMonth(
   });
 }
 
+/** Monthly cashflow entry in EUR */
+export interface MonthlyCashflow {
+  month: MonthKey;
+  label: string;
+  revenue: number;
+  consumption: number;
+  cashflow: number;
+  accumRevenue: number;
+  accumConsumption: number;
+  accumCashflow: number;
+}
+
+/**
+ * Compute monthly Revenue vs Consumption (EUR) for cashflow charting.
+ * Revenue is spread proportionally across months using project date ranges.
+ * Consumption is derived from the JH demand simulation × JH rate.
+ * Supports optional account filter.
+ */
+export function computeCashflowByMonth(
+  projects: ProjectRow[],
+  targets: Targets = DEFAULT_TARGETS,
+  updateDate?: string,
+  account?: string,
+  year: number = 2026,
+): MonthlyCashflow[] {
+  const filtered = account ? projects.filter(p => p.account === account) : projects;
+  const currentYear = year;
+  const yearStart = new Date(currentYear, 0, 1);
+  const yearEnd = new Date(currentYear, 11, 31);
+
+  // 1. Revenue by month: spread each project's deploy + run revenue across their date ranges
+  const revByMonth: Record<MonthKey, number> = {};
+  for (let m = 0; m < 12; m++) revByMonth[monthKey(currentYear, m)] = 0;
+
+  for (const p of filtered) {
+    // Deploy revenue: kickOff → goLive
+    if (p.deployRevenue > 0) {
+      const start = parseDate(p.kickOff);
+      const end = parseDate(p.goLive) || DEFAULT_GO_LIVE;
+      if (start) {
+        const spread = spreadByMonth(p.deployRevenue, start, end);
+        for (const [k, v] of Object.entries(spread)) {
+          if (revByMonth[k] !== undefined) revByMonth[k] += v;
+        }
+      }
+    }
+    // RUN revenue: max(goLive, yearStart) → yearEnd
+    if (p.runRevenue > 0) {
+      const goLive = parseDate(p.goLive) || DEFAULT_GO_LIVE;
+      const runStart = goLive < yearStart ? yearStart : goLive;
+      const spread = spreadByMonth(p.runRevenue, runStart, yearEnd);
+      for (const [k, v] of Object.entries(spread)) {
+        if (revByMonth[k] !== undefined) revByMonth[k] += v;
+      }
+    }
+  }
+
+  // 2. Consumption by month: use JH demand × JH rate
+  const deploySim = computeDeploySimulation(filtered, targets, updateDate);
+  const runSim = computeRunSimulation(filtered, targets, updateDate);
+  const jhRate = 400; // DEFAULT_JH_RATE
+
+  const consoByMonth: Record<MonthKey, number> = {};
+  for (let m = 0; m < 12; m++) consoByMonth[monthKey(currentYear, m)] = 0;
+
+  for (const agg of deploySim.aggregated) {
+    if (consoByMonth[agg.month] !== undefined) consoByMonth[agg.month] += agg.total * jhRate;
+  }
+  for (const agg of runSim.aggregated) {
+    if (consoByMonth[agg.month] !== undefined) consoByMonth[agg.month] += agg.total * jhRate;
+  }
+
+  // 3. Build monthly cashflow with accumulation
+  let accumRev = 0, accumConso = 0;
+  return Array.from({ length: 12 }, (_, m) => {
+    const mk = monthKey(currentYear, m);
+    const rev = Math.round(revByMonth[mk]);
+    const conso = Math.round(consoByMonth[mk]);
+    accumRev += rev;
+    accumConso += conso;
+    return {
+      month: mk,
+      label: MONTH_LABELS[m],
+      revenue: rev,
+      consumption: conso,
+      cashflow: rev - conso,
+      accumRevenue: accumRev,
+      accumConsumption: accumConso,
+      accumCashflow: accumRev - accumConso,
+    };
+  });
+}
+
 /** Projection: extrapolate current consumption to end of phase */
 export interface ProjectProjection {
   id: string;

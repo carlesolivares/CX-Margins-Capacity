@@ -7,6 +7,7 @@ import {
   computeTeamCapacityByMonth,
   computeDeploySimulation,
   computeRunSimulation,
+  computeCashflowByMonth,
   getProjectColor,
 } from '../utils/simulation';
 import type { ProjectProjection, ProjectMonthlyJH, MonthlyAggregate } from '../utils/simulation';
@@ -301,7 +302,7 @@ export function Projection({ projects, members, targets, updateDate }: Projectio
       )}
 
       {tab === 'cashflow' && (
-        <CashflowTab projects={projects} />
+        <CashflowTab projects={projects} targets={targets} updateDate={updateDate} updateMonthLabel={updateMonthLabel} />
       )}
     </div>
   );
@@ -689,74 +690,34 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
   );
 }
 
-function CashflowTab({ projects }: { projects: ProjectRow[] }) {
+function CashflowTab({ projects, targets, updateDate, updateMonthLabel }: { projects: ProjectRow[]; targets: Targets; updateDate?: string; updateMonthLabel?: string | null }) {
   const [selectedAccount, setSelectedAccount] = useState<string>('__global__');
 
-  const cashflowData = useMemo(() => {
-    const accountMap = new Map<string, { revenue: number; conso: number }>();
-    for (const p of projects) {
-      const existing = accountMap.get(p.account) || { revenue: 0, conso: 0 };
-      existing.revenue += p.deployRevenue + p.runRevenue;
-      existing.conso += p.deployConso + p.runConso;
-      accountMap.set(p.account, existing);
-    }
-    return [...accountMap.entries()]
-      .map(([account, data]) => ({
-        account,
-        revenue: data.revenue,
-        conso: data.conso,
-        cashflow: data.revenue - data.conso,
-        margin: data.revenue > 0 ? Math.round(((data.revenue - data.conso) / data.revenue) * 1000) / 10 : 0,
-      }))
-      .sort((a, b) => b.cashflow - a.cashflow);
+  const accounts = useMemo(() => {
+    const set = new Set(projects.map(p => p.account));
+    return [...set].sort();
   }, [projects]);
 
-  const accounts = useMemo(() => cashflowData.map(r => r.account), [cashflowData]);
+  // Monthly cashflow time-series
+  const monthly = useMemo(() =>
+    computeCashflowByMonth(projects, targets, updateDate, selectedAccount === '__global__' ? undefined : selectedAccount),
+  [projects, targets, updateDate, selectedAccount]);
 
+  // Totals from accumulated last month
   const totals = useMemo(() => {
-    const t = { revenue: 0, conso: 0, cashflow: 0 };
-    for (const row of cashflowData) {
-      t.revenue += row.revenue;
-      t.conso += row.conso;
-      t.cashflow += row.cashflow;
-    }
-    return { ...t, margin: t.revenue > 0 ? Math.round(((t.revenue - t.conso) / t.revenue) * 1000) / 10 : 0 };
-  }, [cashflowData]);
+    const last = monthly[monthly.length - 1];
+    if (!last) return { revenue: 0, conso: 0, cashflow: 0, margin: 0 };
+    const rev = last.accumRevenue;
+    const conso = last.accumConsumption;
+    return {
+      revenue: rev,
+      conso,
+      cashflow: rev - conso,
+      margin: rev > 0 ? Math.round(((rev - conso) / rev) * 1000) / 10 : 0,
+    };
+  }, [monthly]);
 
-  // KPI values based on selection
-  const kpi = useMemo(() => {
-    if (selectedAccount === '__global__') return totals;
-    const row = cashflowData.find(r => r.account === selectedAccount);
-    return row || { revenue: 0, conso: 0, cashflow: 0, margin: 0 };
-  }, [selectedAccount, cashflowData, totals]);
-
-  // Chart: global shows all accounts; per-account shows that account's projects
-  const chartData = useMemo(() => {
-    if (selectedAccount === '__global__') {
-      return cashflowData.map(row => ({
-        name: row.account,
-        revenue: row.revenue,
-        conso: row.conso,
-        cashflow: row.cashflow,
-      }));
-    }
-    // Per-account: show individual projects
-    return projects
-      .filter(p => p.account === selectedAccount)
-      .map(p => {
-        const rev = p.deployRevenue + p.runRevenue;
-        const conso = p.deployConso + p.runConso;
-        return {
-          name: p.project || p.account,
-          revenue: rev,
-          conso,
-          cashflow: rev - conso,
-        };
-      })
-      .sort((a, b) => b.cashflow - a.cashflow);
-  }, [selectedAccount, cashflowData, projects]);
-
-  if (cashflowData.length === 0) {
+  if (projects.length === 0) {
     return (
       <>
         <h3>Cashflow</h3>
@@ -792,94 +753,116 @@ function CashflowTab({ projects }: { projects: ProjectRow[] }) {
           <div className="projection-kpi-row">
             <div className="projection-kpi">
               <span className="projection-kpi-label">Revenue</span>
-              <span className="projection-kpi-value">{formatCurrency(kpi.revenue)}</span>
+              <span className="projection-kpi-value">{formatCurrency(totals.revenue)}</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Consumption</span>
-              <span className="projection-kpi-value">{formatCurrency(kpi.conso)}</span>
+              <span className="projection-kpi-value">{formatCurrency(totals.conso)}</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Cashflow</span>
-              <span className={`projection-kpi-value ${kpi.cashflow >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {formatCurrency(kpi.cashflow)}
+              <span className={`projection-kpi-value ${totals.cashflow >= 0 ? 'healthy' : 'unhealthy'}`}>
+                {formatCurrency(totals.cashflow)}
               </span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Margin</span>
-              <span className={`projection-kpi-value ${kpi.margin >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {kpi.margin}%
+              <span className={`projection-kpi-value ${totals.margin >= 0 ? 'healthy' : 'unhealthy'}`}>
+                {totals.margin}%
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Cashflow bar chart */}
-      <h3>{selectedAccount === '__global__' ? 'Cashflow by Account' : `Cashflow by Project — ${selectedAccount}`}</h3>
+      {/* Monthly cashflow chart */}
+      <h3>Monthly Cashflow</h3>
       <div className="chart-container chart-full-width">
-        <ResponsiveContainer width="100%" height={Math.max(300, chartData.length * 40)}>
-          <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 140, bottom: 5 }}>
+        <ResponsiveContainer width="100%" height={350}>
+          <ComposedChart data={monthly} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis type="number" tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
             <Tooltip formatter={(value) => [formatCurrency(value as number), '']} />
             <Legend />
-            <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-            <Bar dataKey="conso" name="Consumption" fill="#f59e0b" radius={[0, 4, 4, 0]} />
-            <Bar dataKey="cashflow" name="Cashflow" radius={[0, 4, 4, 0]}>
-              {chartData.map((entry, i) => (
-                <Cell key={i} fill={entry.cashflow >= 0 ? '#10b981' : '#ef4444'} />
-              ))}
-            </Bar>
-          </BarChart>
+            <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="consumption" name="Consumption" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            <Line dataKey="cashflow" name="Cashflow" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+            {updateMonthLabel && (
+              <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Table */}
-      <h3>{selectedAccount === '__global__' ? 'Cashflow Detail by Account' : `Project Detail — ${selectedAccount}`}</h3>
+      {/* Accumulated cashflow chart */}
+      <h3>Accumulated Cashflow</h3>
+      <div className="chart-container chart-full-width">
+        <ResponsiveContainer width="100%" height={350}>
+          <ComposedChart data={monthly} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <YAxis tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(value) => [formatCurrency(value as number), '']} />
+            <Legend />
+            <Area dataKey="accumRevenue" name="Accum. Revenue" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} />
+            <Area dataKey="accumConsumption" name="Accum. Consumption" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+            <Line dataKey="accumCashflow" name="Accum. Cashflow" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+            {updateMonthLabel && (
+              <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Monthly table */}
+      <h3>Monthly Breakdown</h3>
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
-              <th>{selectedAccount === '__global__' ? 'Account' : 'Project'}</th>
+              <th>Month</th>
               <th className="right">Revenue</th>
               <th className="right">Consumption</th>
               <th className="right">Cashflow</th>
-              <th className="right">Margin</th>
+              <th className="right">Accum. Revenue</th>
+              <th className="right">Accum. Consumption</th>
+              <th className="right">Accum. Cashflow</th>
             </tr>
           </thead>
           <tbody>
-            {chartData.map(row => {
-              const margin = row.revenue > 0 ? Math.round(((row.revenue - row.conso) / row.revenue) * 1000) / 10 : 0;
-              return (
-                <tr key={row.name}>
-                  <td className="customer-name">{row.name}</td>
-                  <td className="right">{formatCurrency(row.revenue)}</td>
-                  <td className="right">{formatCurrency(row.conso)}</td>
-                  <td className="right">
-                    <strong className={row.cashflow >= 0 ? 'text-success' : 'text-danger'}>
-                      {formatCurrency(row.cashflow)}
-                    </strong>
-                  </td>
-                  <td className="right">
-                    <span className={`badge ${margin >= 0 ? 'healthy' : 'unhealthy'}`}>{margin}%</span>
-                  </td>
-                </tr>
-              );
-            })}
+            {monthly.map(row => (
+              <tr key={row.month}>
+                <td>{row.label}</td>
+                <td className="right">{formatCurrency(row.revenue)}</td>
+                <td className="right">{formatCurrency(row.consumption)}</td>
+                <td className="right">
+                  <span className={row.cashflow >= 0 ? 'text-success' : 'text-danger'}>
+                    {formatCurrency(row.cashflow)}
+                  </span>
+                </td>
+                <td className="right">{formatCurrency(row.accumRevenue)}</td>
+                <td className="right">{formatCurrency(row.accumConsumption)}</td>
+                <td className="right">
+                  <span className={row.accumCashflow >= 0 ? 'text-success' : 'text-danger'}>
+                    {formatCurrency(row.accumCashflow)}
+                  </span>
+                </td>
+              </tr>
+            ))}
           </tbody>
           <tfoot>
             <tr>
-              <td><strong>Total ({chartData.length})</strong></td>
-              <td className="right"><strong>{formatCurrency(kpi.revenue)}</strong></td>
-              <td className="right"><strong>{formatCurrency(kpi.conso)}</strong></td>
+              <td><strong>Total</strong></td>
+              <td className="right"><strong>{formatCurrency(totals.revenue)}</strong></td>
+              <td className="right"><strong>{formatCurrency(totals.conso)}</strong></td>
               <td className="right">
-                <strong className={kpi.cashflow >= 0 ? 'text-success' : 'text-danger'}>
-                  {formatCurrency(kpi.cashflow)}
+                <strong className={totals.cashflow >= 0 ? 'text-success' : 'text-danger'}>
+                  {formatCurrency(totals.cashflow)}
                 </strong>
               </td>
-              <td className="right">
-                <strong><span className={`badge ${kpi.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{kpi.margin}%</span></strong>
+              <td className="right" colSpan={3}>
+                <strong>Margin: <span className={`badge ${totals.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{totals.margin}%</span></strong>
               </td>
             </tr>
           </tfoot>
