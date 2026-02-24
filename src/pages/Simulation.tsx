@@ -11,9 +11,9 @@ import {
 import type { MonthlyAggregate } from '../utils/simulation';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ComposedChart, Line, ReferenceLine,
+  ResponsiveContainer, ComposedChart, Line, ReferenceLine, Cell, BarChart,
 } from 'recharts';
-import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download } from 'lucide-react';
+import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download, TrendingUp } from 'lucide-react';
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -67,7 +67,10 @@ interface SimulationProps {
   updateDate?: string;
 }
 
+type SimTab = 'capacity' | 'financial';
+
 export function Simulation({ projects, members, targets, updateDate }: SimulationProps) {
+  const [simTab, setSimTab] = useState<SimTab>('capacity');
   const [simProjects, setSimProjects] = useState<SimulatedProject[]>([]);
 
   // Simulated team: start from real members, allow edits and additions
@@ -260,6 +263,69 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
     setSimTeam(prev => prev.filter(m => m.id !== id));
   };
 
+  // Financial summary data
+  const financialData = useMemo(() => {
+    const totalDeployRev = allProjects.reduce((s, p) => s + p.deployRevenue, 0);
+    const totalRunRev = allProjects.reduce((s, p) => s + p.runRevenue, 0);
+    const totalRevenue = totalDeployRev + totalRunRev;
+
+    // Team cost from simulated team
+    const teamCost = simTeamAsMembers.reduce((s, m) =>
+      s + (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate, 0);
+
+    // Base team cost (original team)
+    const baseTeamCost = members.reduce((s, m) =>
+      s + (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate, 0);
+
+    // Quarterly breakdown
+    const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
+    const quarterlyData = quarters.map((q, qi) => {
+      const simCost = simTeamAsMembers.reduce((s, m) => s + m[qKeys[qi]] * m.dailyRate, 0);
+      const baseCost = members.reduce((s, m) => s + m[qKeys[qi]] * m.dailyRate, 0);
+      // Quarterly revenue: spread evenly for simplicity (demand-weighted would be more accurate)
+      const qDemand = demandByMonth.slice(qi * 3, qi * 3 + 3).reduce((s, d) => s + d.total, 0);
+      const totalDemand = demandByMonth.reduce((s, d) => s + d.total, 0);
+      const qRevShare = totalDemand > 0 ? qDemand / totalDemand : 0.25;
+      const qRevenue = totalRevenue * qRevShare;
+      return {
+        quarter: q,
+        revenue: Math.round(qRevenue),
+        simCost: Math.round(simCost),
+        baseCost: Math.round(baseCost),
+        simMargin: qRevenue > 0 ? Math.round(((qRevenue - simCost) / qRevenue) * 1000) / 10 : 0,
+        baseMargin: qRevenue > 0 ? Math.round(((qRevenue - baseCost) / qRevenue) * 1000) / 10 : 0,
+      };
+    });
+
+    const simMargin = totalRevenue > 0 ? Math.round(((totalRevenue - teamCost) / totalRevenue) * 1000) / 10 : 0;
+    const baseMargin = totalRevenue > 0 ? Math.round(((totalRevenue - baseTeamCost) / totalRevenue) * 1000) / 10 : 0;
+
+    // Per-account margin breakdown
+    const accountMap = new Map<string, { revenue: number; }>();
+    for (const p of allProjects) {
+      const existing = accountMap.get(p.account) || { revenue: 0 };
+      existing.revenue += p.deployRevenue + p.runRevenue;
+      accountMap.set(p.account, existing);
+    }
+    const accountBreakdown = [...accountMap.entries()]
+      .map(([account, data]) => {
+        // Allocate team cost proportionally to revenue share
+        const revShare = totalRevenue > 0 ? data.revenue / totalRevenue : 0;
+        const allocatedCost = teamCost * revShare;
+        const margin = data.revenue > 0 ? Math.round(((data.revenue - allocatedCost) / data.revenue) * 1000) / 10 : 0;
+        return { account, revenue: data.revenue, cost: Math.round(allocatedCost), margin };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+
+    return {
+      totalRevenue, totalDeployRev, totalRunRev,
+      teamCost, baseTeamCost,
+      simMargin, baseMargin,
+      quarterlyData, accountBreakdown,
+    };
+  }, [allProjects, simTeamAsMembers, members, demandByMonth]);
+
   return (
     <div className="page">
       <div className="sim-header">
@@ -275,97 +341,291 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
         Simulate capacity changes by editing team members or adding hypothetical projects. Changes here are not saved.
       </p>
 
-      <div className="sim-header">
-        <h3>Demand vs Capacity by Month (JH)</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {hasAnyChanges && (
-            <button className="btn btn-secondary" onClick={saveSnapshot}>
-              <Save size={14} /> Save Snapshot
-            </button>
-          )}
-          {savedAt && (
-            <button className="btn btn-secondary" onClick={loadSnapshot}>
-              <Download size={14} /> Load Snapshot
-            </button>
-          )}
-          {hasAnyChanges && (
-            <button className="btn btn-secondary" onClick={resetAll}>
-              <RotateCcw size={14} /> Reset All
-            </button>
-          )}
-        </div>
+      {/* Tabs */}
+      <div className="proj-tabs" style={{ marginBottom: 16 }}>
+        <button className={`sim-tab ${simTab === 'capacity' ? 'active' : ''}`} onClick={() => setSimTab('capacity')}>
+          Capacity Planning
+        </button>
+        <button className={`sim-tab ${simTab === 'financial' ? 'active' : ''}`} onClick={() => setSimTab('financial')}>
+          <TrendingUp size={14} /> Financial Summary
+        </button>
       </div>
-      <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} updateMonthLabel={dateToMonthLabel(updateDate)} />
 
-      {/* Simulated Projects Section */}
-      <div className="sim-header">
-        <h3><Plus size={18} /> Simulate New Projects</h3>
-      </div>
-      <p className="settings-desc">
-        Add hypothetical projects to see how they impact demand. These are not saved to your project list.
-      </p>
-      <AddSimProjectForm onAdd={addSimProject} />
-      {simProjects.length > 0 && (
-        <div className="table-wrapper" style={{ marginTop: '0.75rem' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Project Name</th>
-                <th className="right">Deploy (&euro;)</th>
-                <th className="right">RUN (&euro;)</th>
-                <th>Kick-off</th>
-                <th>Go-live</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {simProjects.map(sp => (
-                <tr key={sp.id}>
-                  <td className="customer-name">{sp.name}</td>
-                  <td className="right">{sp.deployRevenue > 0 ? formatCurrency(sp.deployRevenue) : '\u2014'}</td>
-                  <td className="right">{sp.runRevenue > 0 ? formatCurrency(sp.runRevenue) : '\u2014'}</td>
-                  <td className="date-cell">{sp.kickOff || '\u2014'}</td>
-                  <td className="date-cell">{sp.goLive || '\u2014'}</td>
-                  <td>
-                    <button className="btn-icon" onClick={() => removeSimProject(sp.id)} title="Remove">
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {simTab === 'capacity' && (
+        <>
+          <div className="sim-header">
+            <h3>Demand vs Capacity by Month (JH)</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {hasAnyChanges && (
+                <button className="btn btn-secondary" onClick={saveSnapshot}>
+                  <Save size={14} /> Save Snapshot
+                </button>
+              )}
+              {savedAt && (
+                <button className="btn btn-secondary" onClick={loadSnapshot}>
+                  <Download size={14} /> Load Snapshot
+                </button>
+              )}
+              {hasAnyChanges && (
+                <button className="btn btn-secondary" onClick={resetAll}>
+                  <RotateCcw size={14} /> Reset All
+                </button>
+              )}
+            </div>
+          </div>
+          <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} updateMonthLabel={dateToMonthLabel(updateDate)} />
+
+          {/* Simulated Projects Section */}
+          <div className="sim-header">
+            <h3><Plus size={18} /> Simulate New Projects</h3>
+          </div>
+          <p className="settings-desc">
+            Add hypothetical projects to see how they impact demand. These are not saved to your project list.
+          </p>
+          <AddSimProjectForm onAdd={addSimProject} />
+          {simProjects.length > 0 && (
+            <div className="table-wrapper" style={{ marginTop: '0.75rem' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Project Name</th>
+                    <th className="right">Deploy (&euro;)</th>
+                    <th className="right">RUN (&euro;)</th>
+                    <th>Kick-off</th>
+                    <th>Go-live</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {simProjects.map(sp => (
+                    <tr key={sp.id}>
+                      <td className="customer-name">{sp.name}</td>
+                      <td className="right">{sp.deployRevenue > 0 ? formatCurrency(sp.deployRevenue) : '\u2014'}</td>
+                      <td className="right">{sp.runRevenue > 0 ? formatCurrency(sp.runRevenue) : '\u2014'}</td>
+                      <td className="date-cell">{sp.kickOff || '\u2014'}</td>
+                      <td className="date-cell">{sp.goLive || '\u2014'}</td>
+                      <td>
+                        <button className="btn-icon" onClick={() => removeSimProject(sp.id)} title="Remove">
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Simulated Team */}
+          <div className="sim-header" style={{ marginTop: 24 }}>
+            <h3><Users size={18} /> Adjust Team Capacity</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" onClick={autoBalance} title="Scale team days so capacity matches demand per quarter">
+                <Zap size={14} /> Auto-balance
+              </button>
+              {hasTeamChanges && (
+                <button className="btn btn-secondary" onClick={resetSimTeam}>
+                  <RotateCcw size={14} /> Reset Team
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="settings-desc">
+            Edit existing team members or add new ones to simulate capacity changes. Auto-balance scales each member's quarterly days so total capacity matches demand. You can then adjust manually.
+          </p>
+          <SimTeamTable
+            simTeam={simTeam}
+            updateMember={updateSimMember}
+            removeMember={removeSimMember}
+            addMember={addSimMember}
+          />
+        </>
       )}
 
-      {/* Simulated Team */}
-      <div className="sim-header" style={{ marginTop: 24 }}>
-        <h3><Users size={18} /> Adjust Team Capacity</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" onClick={autoBalance} title="Scale team days so capacity matches demand per quarter">
-            <Zap size={14} /> Auto-balance
-          </button>
-          {hasTeamChanges && (
-            <button className="btn btn-secondary" onClick={resetSimTeam}>
-              <RotateCcw size={14} /> Reset Team
-            </button>
-          )}
-        </div>
-      </div>
-      <p className="settings-desc">
-        Edit existing team members or add new ones to simulate capacity changes. Auto-balance scales each member's quarterly days so total capacity matches demand. You can then adjust manually.
-      </p>
-      <SimTeamTable
-        simTeam={simTeam}
-        updateMember={updateSimMember}
-        removeMember={removeSimMember}
-        addMember={addSimMember}
-      />
+      {simTab === 'financial' && (
+        <FinancialSummary
+          data={financialData}
+          hasTeamChanges={hasTeamChanges}
+          hasSimProjects={hasSimProjects}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Sub-components ─── */
+
+interface FinancialData {
+  totalRevenue: number;
+  totalDeployRev: number;
+  totalRunRev: number;
+  teamCost: number;
+  baseTeamCost: number;
+  simMargin: number;
+  baseMargin: number;
+  quarterlyData: { quarter: string; revenue: number; simCost: number; baseCost: number; simMargin: number; baseMargin: number }[];
+  accountBreakdown: { account: string; revenue: number; cost: number; margin: number }[];
+}
+
+function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: FinancialData; hasTeamChanges: boolean; hasSimProjects: boolean }) {
+  const hasChanges = hasTeamChanges || hasSimProjects;
+  const marginDelta = data.simMargin - data.baseMargin;
+
+  return (
+    <>
+      {/* KPI summary */}
+      <div className="projection-global" style={{ marginBottom: 24 }}>
+        <div className="projection-global-card">
+          <h4>Margin Forecast {hasChanges ? '(Simulated)' : '(Baseline)'}</h4>
+          <div className="projection-kpi-row">
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Total Revenue</span>
+              <span className="projection-kpi-value">{formatCurrency(data.totalRevenue)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Team Cost</span>
+              <span className="projection-kpi-value">{formatCurrency(data.teamCost)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Margin</span>
+              <span className={`projection-kpi-value ${data.simMargin >= 0 ? 'healthy' : 'unhealthy'}`}>
+                {data.simMargin}%
+              </span>
+            </div>
+            {hasChanges && (
+              <div className="projection-kpi">
+                <span className="projection-kpi-label">vs Baseline</span>
+                <span className={`projection-kpi-value ${marginDelta >= 0 ? 'healthy' : 'unhealthy'}`}>
+                  {marginDelta >= 0 ? '+' : ''}{marginDelta.toFixed(1)}pp
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Quarterly margin chart */}
+      <h3>Quarterly Margin Forecast</h3>
+      <div className="chart-container chart-full-width">
+        <ResponsiveContainer width="100%" height={350}>
+          <ComposedChart data={data.quarterlyData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="quarter" tick={{ fontSize: 12 }} />
+            <YAxis yAxisId="eur" tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
+            <YAxis yAxisId="pct" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+            <Tooltip formatter={(value, name) => {
+              if (String(name).includes('Margin')) return [`${Number(value).toFixed(1)}%`, name];
+              return [formatCurrency(value as number), name];
+            }} />
+            <Legend />
+            <Bar yAxisId="eur" dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            <Bar yAxisId="eur" dataKey="simCost" name="Sim. Team Cost" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            {hasChanges && <Bar yAxisId="eur" dataKey="baseCost" name="Base Team Cost" fill="#cbd5e1" radius={[4, 4, 0, 0]} />}
+            <Line yAxisId="pct" dataKey="simMargin" name="Sim. Margin %" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+            {hasChanges && <Line yAxisId="pct" dataKey="baseMargin" name="Base Margin %" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3 }} />}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Quarterly table */}
+      <h3>Quarterly Breakdown</h3>
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Quarter</th>
+              <th className="right">Revenue</th>
+              <th className="right">{hasChanges ? 'Sim. Cost' : 'Team Cost'}</th>
+              {hasChanges && <th className="right">Base Cost</th>}
+              <th className="right">{hasChanges ? 'Sim. Margin' : 'Margin'}</th>
+              {hasChanges && <th className="right">Base Margin</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {data.quarterlyData.map(q => (
+              <tr key={q.quarter}>
+                <td><strong>{q.quarter}</strong></td>
+                <td className="right">{formatCurrency(q.revenue)}</td>
+                <td className="right">{formatCurrency(q.simCost)}</td>
+                {hasChanges && <td className="right">{formatCurrency(q.baseCost)}</td>}
+                <td className="right">
+                  <span className={`badge ${q.simMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{q.simMargin}%</span>
+                </td>
+                {hasChanges && (
+                  <td className="right">
+                    <span className={`badge ${q.baseMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{q.baseMargin}%</span>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>Annual</strong></td>
+              <td className="right"><strong>{formatCurrency(data.totalRevenue)}</strong></td>
+              <td className="right"><strong>{formatCurrency(data.teamCost)}</strong></td>
+              {hasChanges && <td className="right"><strong>{formatCurrency(data.baseTeamCost)}</strong></td>}
+              <td className="right">
+                <strong><span className={`badge ${data.simMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{data.simMargin}%</span></strong>
+              </td>
+              {hasChanges && (
+                <td className="right">
+                  <strong><span className={`badge ${data.baseMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{data.baseMargin}%</span></strong>
+                </td>
+              )}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Account margin breakdown */}
+      <h3>Margin by Account (Simulated Cost Allocation)</h3>
+      <div className="chart-container chart-full-width">
+        <ResponsiveContainer width="100%" height={Math.max(300, data.accountBreakdown.length * 32)}>
+          <BarChart data={data.accountBreakdown} layout="vertical" margin={{ top: 5, right: 30, left: 140, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis type="number" tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+            <YAxis type="category" dataKey="account" width={130} tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Margin']} />
+            <Legend />
+            <ReferenceLine x={0} stroke="#f59e0b" strokeDasharray="6 3" strokeWidth={2} label={{ value: 'Break-even', position: 'top', fontSize: 12 }} />
+            <Bar dataKey="margin" name="Forecast Margin" radius={[0, 4, 4, 0]}>
+              {data.accountBreakdown.map((entry, i) => (
+                <Cell key={i} fill={entry.margin >= 0 ? '#10b981' : '#ef4444'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Account detail table */}
+      <div className="table-wrapper" style={{ marginTop: 16 }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th className="right">Revenue</th>
+              <th className="right">Allocated Cost</th>
+              <th className="right">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.accountBreakdown.map(row => (
+              <tr key={row.account}>
+                <td className="customer-name">{row.account}</td>
+                <td className="right">{formatCurrency(row.revenue)}</td>
+                <td className="right">{formatCurrency(row.cost)}</td>
+                <td className="right">
+                  <span className={`badge ${row.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{row.margin}%</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 
 function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
   simTeam: SimTeamMember[];

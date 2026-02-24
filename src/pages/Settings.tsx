@@ -145,15 +145,15 @@ export function Settings({ targets, updateTargets, projects = [], getToggle, set
           </div>
           <div className="assumption-item">
             <span className="assumption-title">JH Rate</span>
-            <span className="assumption-desc">Default daily rate of 400 EUR/JH is used for JH conversions.</span>
+            <span className="assumption-desc">Default daily rate of 400 EUR/JH is used for JH conversions (demand JH &rarr; EUR consumption).</span>
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Deploy JH Formula</span>
-            <span className="assumption-desc">DEPLOY JH = DEPLOY Revenue (EUR) x (100 - Deploy Margin %) / 100 / 400</span>
+            <span className="assumption-desc">DEPLOY JH = DEPLOY Revenue (EUR) &times; (100 &minus; Deploy Margin %) / 100 / 400</span>
           </div>
           <div className="assumption-item">
             <span className="assumption-title">RUN JH Formula</span>
-            <span className="assumption-desc">RUN JH = RUN Revenue (EUR) x (100 - RUN Margin %) / 100 / 400</span>
+            <span className="assumption-desc">RUN JH = RUN Revenue (EUR) &times; (100 &minus; RUN Margin %) / 100 / 400</span>
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Hypercare</span>
@@ -161,11 +161,23 @@ export function Settings({ targets, updateTargets, projects = [], getToggle, set
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Projection Extrapolation</span>
-            <span className="assumption-desc">Projected cost = Actual consumption x (Total phase days / Elapsed days). Phase 1 projects use the target margin % to estimate RUN cost.</span>
+            <span className="assumption-desc">Projected cost = Actual consumption &times; (Total phase days / Elapsed days). Phase 1 projects use the target margin % to estimate RUN cost.</span>
+          </div>
+          <div className="assumption-item">
+            <span className="assumption-title">Cashflow Revenue</span>
+            <span className="assumption-desc">Revenue is recognized as a one-shot in the month of the start date (Date d&eacute;but) from the imported revenue file. Applies to both licenses (RUN) and setup (Deploy). If no revenue file is imported, fallback: Deploy at kick-off month, RUN at go-live + 2 months.</span>
+          </div>
+          <div className="assumption-item">
+            <span className="assumption-title">Cashflow Consumption</span>
+            <span className="assumption-desc">Real consumption (EUR) is used up to the update date. For future months, consumption is projected from the JH demand simulation &times; 400 EUR/JH rate.</span>
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Team Capacity</span>
             <span className="assumption-desc">Quarterly days per team member are split evenly across the 3 months of each quarter (Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec).</span>
+          </div>
+          <div className="assumption-item">
+            <span className="assumption-title">Simulation Financial Summary</span>
+            <span className="assumption-desc">Margin forecast uses simulated team cost (quarterly days &times; daily rate) as consumption, compared against project revenue. Simulated projects are included in the forecast.</span>
           </div>
         </div>
       </div>
