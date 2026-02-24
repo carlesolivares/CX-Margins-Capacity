@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
+import type { RevenueLineItem } from '../utils/fileParser';
 import { formatCurrency, isDeployComplete } from '../utils/margins';
 import {
   computeProjections,
@@ -35,9 +36,10 @@ interface ProjectionProps {
   members: TeamMember[];
   targets: Targets;
   updateDate?: string;
+  revenueItems?: RevenueLineItem[];
 }
 
-export function Projection({ projects, members, targets, updateDate }: ProjectionProps) {
+export function Projection({ projects, members, targets, updateDate, revenueItems = [] }: ProjectionProps) {
   const [tab, setTab] = useState<ProjTab>('margins');
   const [runMarginOverrides, setRunMarginOverrides] = useState<Record<string, number>>({});
   const [showOverridePanel, setShowOverridePanel] = useState(false);
@@ -302,7 +304,7 @@ export function Projection({ projects, members, targets, updateDate }: Projectio
       )}
 
       {tab === 'cashflow' && (
-        <CashflowTab projects={projects} targets={targets} updateDate={updateDate} updateMonthLabel={updateMonthLabel} />
+        <CashflowTab projects={projects} targets={targets} updateDate={updateDate} updateMonthLabel={updateMonthLabel} revenueItems={revenueItems} />
       )}
     </div>
   );
@@ -690,7 +692,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
   );
 }
 
-function CashflowTab({ projects, targets, updateDate, updateMonthLabel }: { projects: ProjectRow[]; targets: Targets; updateDate?: string; updateMonthLabel?: string | null }) {
+function CashflowTab({ projects, targets, updateDate, updateMonthLabel, revenueItems = [] }: { projects: ProjectRow[]; targets: Targets; updateDate?: string; updateMonthLabel?: string | null; revenueItems?: RevenueLineItem[] }) {
   const [selectedAccount, setSelectedAccount] = useState<string>('__global__');
 
   const accounts = useMemo(() => {
@@ -700,8 +702,8 @@ function CashflowTab({ projects, targets, updateDate, updateMonthLabel }: { proj
 
   // Monthly cashflow time-series
   const monthly = useMemo(() =>
-    computeCashflowByMonth(projects, targets, updateDate, selectedAccount === '__global__' ? undefined : selectedAccount),
-  [projects, targets, updateDate, selectedAccount]);
+    computeCashflowByMonth(projects, targets, updateDate, selectedAccount === '__global__' ? undefined : selectedAccount, 2026, revenueItems),
+  [projects, targets, updateDate, selectedAccount, revenueItems]);
 
   // Totals from accumulated last month
   const totals = useMemo(() => {

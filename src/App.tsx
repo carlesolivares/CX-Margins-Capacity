@@ -145,7 +145,7 @@ function App() {
         )}
         {page === 'planning' && <Planning projects={filteredProjects} />}
         {page === 'simulation' && <Simulation projects={filteredProjects} members={members} targets={targets} updateDate={updateDate} />}
-        {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} updateDate={updateDate} />}
+        {page === 'projection' && <Projection projects={filteredProjects} members={members} targets={targets} updateDate={updateDate} revenueItems={revenueItems} />}
         {page === 'revenue' && (
           <Revenue
             revenueItems={revenueItems}

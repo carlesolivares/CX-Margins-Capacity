@@ -1,6 +1,7 @@
 import type { ProjectRow, TeamMember, Targets } from '../types';
 import { DEFAULT_TARGETS } from '../types';
 import { deployEurToJH, runEurToJH, eurToJH } from './margins';
+import type { RevenueLineItem } from './fileParser';
 
 /** Month key like "2026-01", "2026-02", etc. */
 export type MonthKey = string;
@@ -422,7 +423,7 @@ export interface MonthlyCashflow {
 
 /**
  * Compute monthly Revenue vs Consumption (EUR) for cashflow charting.
- * Revenue: one-shot at kick-off month (deploy), one-shot 2 months after go-live (RUN).
+ * Revenue: from RevenueLineItem[], one-shot at startDate for both licenses and setup.
  * Consumption: real consumption up to updateDate, then projected (from JH simulation × rate).
  * Supports optional account filter.
  */
@@ -432,29 +433,45 @@ export function computeCashflowByMonth(
   updateDate?: string,
   account?: string,
   year: number = 2026,
+  revenueItems: RevenueLineItem[] = [],
 ): MonthlyCashflow[] {
   const filtered = account ? projects.filter(p => p.account === account) : projects;
   const currentYear = year;
 
-  // 1. Revenue by month: one-shot events (no spreading)
+  // 1. Revenue by month: one-shot at startDate from revenue line items
   const revByMonth: Record<MonthKey, number> = {};
   for (let m = 0; m < 12; m++) revByMonth[monthKey(currentYear, m)] = 0;
 
-  for (const p of filtered) {
-    // Deploy revenue: one-shot at kick-off month
-    if (p.deployRevenue > 0) {
-      const start = parseDate(p.kickOff);
-      if (start) {
-        const mk = monthKey(start.getFullYear(), start.getMonth());
-        if (revByMonth[mk] !== undefined) revByMonth[mk] += p.deployRevenue;
+  const filteredRevenue = account
+    ? revenueItems.filter(r => r.account === account)
+    : revenueItems;
+
+  for (const item of filteredRevenue) {
+    const start = parseDate(item.startDate);
+    if (!start) continue;
+    const amount = item.yearAmounts[currentYear] || 0;
+    if (amount <= 0) continue;
+    const mk = monthKey(start.getFullYear(), start.getMonth());
+    if (revByMonth[mk] !== undefined) revByMonth[mk] += amount;
+  }
+
+  // Fallback: if no revenue items imported, use ProjectRow data
+  // Deploy = one-shot at kick-off, RUN = one-shot at go-live + 2 months
+  if (revenueItems.length === 0) {
+    for (const p of filtered) {
+      if (p.deployRevenue > 0) {
+        const start = parseDate(p.kickOff);
+        if (start) {
+          const mk = monthKey(start.getFullYear(), start.getMonth());
+          if (revByMonth[mk] !== undefined) revByMonth[mk] += p.deployRevenue;
+        }
       }
-    }
-    // RUN revenue: one-shot 2 months after go-live
-    if (p.runRevenue > 0) {
-      const goLive = parseDate(p.goLive) || DEFAULT_GO_LIVE;
-      const runDate = new Date(goLive.getFullYear(), goLive.getMonth() + 2, 1);
-      const mk = monthKey(runDate.getFullYear(), runDate.getMonth());
-      if (revByMonth[mk] !== undefined) revByMonth[mk] += p.runRevenue;
+      if (p.runRevenue > 0) {
+        const goLive = parseDate(p.goLive) || DEFAULT_GO_LIVE;
+        const runDate = new Date(goLive.getFullYear(), goLive.getMonth() + 2, 1);
+        const mk = monthKey(runDate.getFullYear(), runDate.getMonth());
+        if (revByMonth[mk] !== undefined) revByMonth[mk] += p.runRevenue;
+      }
     }
   }
 
