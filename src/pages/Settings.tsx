@@ -15,17 +15,19 @@ interface SettingsProps {
 export function Settings({ targets, updateTargets, projects = [], getToggle, setToggle }: SettingsProps) {
   const [deploy, setDeploy] = useState(targets.deployMargin);
   const [run, setRun] = useState(targets.runMargin);
+  const [global, setGlobal] = useState(targets.globalMargin);
 
-  const hasChanges = deploy !== targets.deployMargin || run !== targets.runMargin;
-  const isDefault = deploy === DEFAULT_TARGETS.deployMargin && run === DEFAULT_TARGETS.runMargin;
+  const hasChanges = deploy !== targets.deployMargin || run !== targets.runMargin || global !== targets.globalMargin;
+  const isDefault = deploy === DEFAULT_TARGETS.deployMargin && run === DEFAULT_TARGETS.runMargin && global === DEFAULT_TARGETS.globalMargin;
 
   const apply = () => {
-    updateTargets({ deployMargin: deploy, runMargin: run });
+    updateTargets({ deployMargin: deploy, runMargin: run, globalMargin: global });
   };
 
   const resetDefaults = () => {
     setDeploy(DEFAULT_TARGETS.deployMargin);
     setRun(DEFAULT_TARGETS.runMargin);
+    setGlobal(DEFAULT_TARGETS.globalMargin);
     updateTargets(DEFAULT_TARGETS);
   };
 
@@ -93,6 +95,34 @@ export function Settings({ targets, updateTargets, projects = [], getToggle, set
             </div>
             <span className="settings-hint">
               Default: {DEFAULT_TARGETS.runMargin}% — Current: {targets.runMargin}%
+            </span>
+          </div>
+
+          <div className="settings-card">
+            <label className="settings-label">Global Margin Target</label>
+            <div className="settings-input-row">
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={global}
+                onChange={e => setGlobal(Number(e.target.value))}
+              />
+              <div className="settings-value-group">
+                <input
+                  type="number"
+                  className="input input-sm"
+                  min={0}
+                  max={100}
+                  value={global}
+                  onChange={e => setGlobal(Number(e.target.value))}
+                />
+                <span>%</span>
+              </div>
+            </div>
+            <span className="settings-hint">
+              Default: {DEFAULT_TARGETS.globalMargin}% — Current: {targets.globalMargin}%
             </span>
           </div>
         </div>

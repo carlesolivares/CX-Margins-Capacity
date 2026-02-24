@@ -9,7 +9,7 @@ interface MarginChartProps {
 }
 
 export function MarginChart({ margins, type, targets = DEFAULT_TARGETS }: MarginChartProps) {
-  const threshold = type === 'deployment' ? targets.deployMargin : type === 'run' ? targets.runMargin : 0;
+  const threshold = type === 'deployment' ? targets.deployMargin : type === 'run' ? targets.runMargin : targets.globalMargin;
   const label = type === 'deployment' ? 'Deployment' : type === 'run' ? 'RUN (Licenses)' : 'Global (Deploy + RUN)';
 
   const data = margins
@@ -23,7 +23,7 @@ export function MarginChart({ margins, type, targets = DEFAULT_TARGETS }: Margin
         const totalRev = m.deployRevenue + m.runRevenue;
         const totalCost = m.deployCost + m.runCost;
         const margin = totalRev > 0 ? Math.round(((totalRev - totalCost) / totalRev) * 1000) / 10 : 0;
-        return { name: m.account, margin, healthy: margin >= 0 };
+        return { name: m.account, margin, healthy: margin >= targets.globalMargin };
       }
       return {
         name: m.account,
@@ -62,7 +62,7 @@ export function MarginChart({ margins, type, targets = DEFAULT_TARGETS }: Margin
             stroke="#f59e0b"
             strokeDasharray="6 3"
             strokeWidth={2}
-            label={{ value: type === 'global' ? 'Break-even' : `Target: ${threshold}%`, position: 'top', fontSize: 12 }}
+            label={{ value: `Target: ${threshold}%`, position: 'top', fontSize: 12 }}
           />
           <Bar dataKey="margin" name={`${label} Margin`} radius={[0, 4, 4, 0]}>
             {data.map((entry, index) => (

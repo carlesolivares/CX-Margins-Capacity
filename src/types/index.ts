@@ -53,8 +53,9 @@ export interface SimulationOverride {
 export interface Targets {
   deployMargin: number; // e.g. 20 for 20%
   runMargin: number;    // e.g. 80 for 80%
+  globalMargin: number; // e.g. 70 for 70% — combined deploy+RUN target
 }
 
-export const DEFAULT_TARGETS: Targets = { deployMargin: 20, runMargin: 80 };
+export const DEFAULT_TARGETS: Targets = { deployMargin: 20, runMargin: 80, globalMargin: 70 };
 export const ROLES: Role[] = ['CSM', 'CS', 'PMO', 'FDE', 'PM', 'Dev'];
 export const DEFAULT_JH_RATE = 400;
