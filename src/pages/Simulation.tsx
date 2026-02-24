@@ -11,7 +11,7 @@ import {
 import type { MonthlyAggregate } from '../utils/simulation';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ComposedChart, Line, ReferenceLine, Cell, BarChart,
+  ResponsiveContainer, ComposedChart, Line, ReferenceLine,
 } from 'recharts';
 import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download, TrendingUp } from 'lucide-react';
 
@@ -301,28 +301,11 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
     const simMargin = totalRevenue > 0 ? Math.round(((totalRevenue - teamCost) / totalRevenue) * 1000) / 10 : 0;
     const baseMargin = totalRevenue > 0 ? Math.round(((totalRevenue - baseTeamCost) / totalRevenue) * 1000) / 10 : 0;
 
-    // Per-account margin breakdown
-    const accountMap = new Map<string, { revenue: number; }>();
-    for (const p of allProjects) {
-      const existing = accountMap.get(p.account) || { revenue: 0 };
-      existing.revenue += p.deployRevenue + p.runRevenue;
-      accountMap.set(p.account, existing);
-    }
-    const accountBreakdown = [...accountMap.entries()]
-      .map(([account, data]) => {
-        // Allocate team cost proportionally to revenue share
-        const revShare = totalRevenue > 0 ? data.revenue / totalRevenue : 0;
-        const allocatedCost = teamCost * revShare;
-        const margin = data.revenue > 0 ? Math.round(((data.revenue - allocatedCost) / data.revenue) * 1000) / 10 : 0;
-        return { account, revenue: data.revenue, cost: Math.round(allocatedCost), margin };
-      })
-      .sort((a, b) => b.revenue - a.revenue);
-
     return {
       totalRevenue, totalDeployRev, totalRunRev,
       teamCost, baseTeamCost,
       simMargin, baseMargin,
-      quarterlyData, accountBreakdown,
+      quarterlyData,
     };
   }, [allProjects, simTeamAsMembers, members, demandByMonth]);
 
@@ -464,7 +447,6 @@ interface FinancialData {
   simMargin: number;
   baseMargin: number;
   quarterlyData: { quarter: string; revenue: number; simCost: number; baseCost: number; simMargin: number; baseMargin: number }[];
-  accountBreakdown: { account: string; revenue: number; cost: number; margin: number }[];
 }
 
 function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: FinancialData; hasTeamChanges: boolean; hasSimProjects: boolean }) {
@@ -578,51 +560,6 @@ function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: Fina
         </table>
       </div>
 
-      {/* Account margin breakdown */}
-      <h3>Margin by Account (Simulated Cost Allocation)</h3>
-      <div className="chart-container chart-full-width">
-        <ResponsiveContainer width="100%" height={Math.max(300, data.accountBreakdown.length * 32)}>
-          <BarChart data={data.accountBreakdown} layout="vertical" margin={{ top: 5, right: 30, left: 140, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis type="number" tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
-            <YAxis type="category" dataKey="account" width={130} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Margin']} />
-            <Legend />
-            <ReferenceLine x={0} stroke="#f59e0b" strokeDasharray="6 3" strokeWidth={2} label={{ value: 'Break-even', position: 'top', fontSize: 12 }} />
-            <Bar dataKey="margin" name="Forecast Margin" radius={[0, 4, 4, 0]}>
-              {data.accountBreakdown.map((entry, i) => (
-                <Cell key={i} fill={entry.margin >= 0 ? '#10b981' : '#ef4444'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Account detail table */}
-      <div className="table-wrapper" style={{ marginTop: 16 }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Account</th>
-              <th className="right">Revenue</th>
-              <th className="right">Allocated Cost</th>
-              <th className="right">Margin</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.accountBreakdown.map(row => (
-              <tr key={row.account}>
-                <td className="customer-name">{row.account}</td>
-                <td className="right">{formatCurrency(row.revenue)}</td>
-                <td className="right">{formatCurrency(row.cost)}</td>
-                <td className="right">
-                  <span className={`badge ${row.margin >= 0 ? 'healthy' : 'unhealthy'}`}>{row.margin}%</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </>
   );
 }
