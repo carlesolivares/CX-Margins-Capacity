@@ -1,5 +1,5 @@
 import type { ProjectRow, TeamMember, CustomerMargin, TeamCapacity, SimulationOverride, Role, Targets } from '../types';
-import { DEFAULT_JH_RATE, DEFAULT_TARGETS, ROLES } from '../types';
+import { DEFAULT_JH_RATE, DEFAULT_TARGETS, ROLES, MONTH_KEYS, MONTH_LABELS_SHORT, totalDays as memberTotalDays } from '../types';
 
 /**
  * Returns true if the project's go-live is in the past (before current year start),
@@ -88,25 +88,26 @@ export function calculateTeamCapacity(members: TeamMember[]): TeamCapacity {
     byRole[role] = { days: 0, cost: 0, count: 0 };
   }
 
-  const byQuarter: Record<string, number> = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 };
+  const byMonth: Record<string, number> = {};
+  for (const label of MONTH_LABELS_SHORT) byMonth[label] = 0;
+
   let totalAvailableDays = 0;
   let totalCost = 0;
 
   for (const m of members) {
-    const totalDays = m.q1Days + m.q2Days + m.q3Days + m.q4Days;
-    const cost = totalDays * m.dailyRate;
-    byRole[m.role].days += totalDays;
+    const td = memberTotalDays(m);
+    const cost = td * m.dailyRate;
+    byRole[m.role].days += td;
     byRole[m.role].cost += cost;
     byRole[m.role].count += 1;
-    byQuarter.Q1 += m.q1Days;
-    byQuarter.Q2 += m.q2Days;
-    byQuarter.Q3 += m.q3Days;
-    byQuarter.Q4 += m.q4Days;
-    totalAvailableDays += totalDays;
+    for (let i = 0; i < 12; i++) {
+      byMonth[MONTH_LABELS_SHORT[i]] += m[MONTH_KEYS[i]];
+    }
+    totalAvailableDays += td;
     totalCost += cost;
   }
 
-  return { totalAvailableDays, totalConsumedDays: 0, totalCost, byRole, byQuarter };
+  return { totalAvailableDays, totalConsumedDays: 0, totalCost, byRole, byMonth };
 }
 
 /** Get consumed conso in EUR and converted to JH for display */
@@ -146,7 +147,7 @@ export function simulateMargins(
 
     const baseCount = roleMembers.length;
     const baseAvgDays = baseCount > 0
-      ? roleMembers.reduce((s, m) => s + m.q1Days + m.q2Days + m.q3Days + m.q4Days, 0) / baseCount
+      ? roleMembers.reduce((s, m) => s + memberTotalDays(m), 0) / baseCount
       : 0;
     const baseAvgRate = baseCount > 0
       ? roleMembers.reduce((s, m) => s + m.dailyRate, 0) / baseCount
@@ -170,14 +171,14 @@ export function simulateMargins(
 
 export function getWeightedAvgRate(members: TeamMember[]): number {
   if (members.length === 0) return DEFAULT_JH_RATE;
-  let totalDays = 0;
+  let td = 0;
   let totalCost = 0;
   for (const m of members) {
-    const d = m.q1Days + m.q2Days + m.q3Days + m.q4Days;
-    totalDays += d;
+    const d = memberTotalDays(m);
+    td += d;
     totalCost += d * m.dailyRate;
   }
-  return totalDays > 0 ? totalCost / totalDays : DEFAULT_JH_RATE;
+  return td > 0 ? totalCost / td : DEFAULT_JH_RATE;
 }
 
 export function emptySimulationOverride(): SimulationOverride {

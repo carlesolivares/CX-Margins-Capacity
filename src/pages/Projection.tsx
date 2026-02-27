@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
+import { MONTH_KEYS, MONTH_LABELS_SHORT } from '../types';
 import type { RevenueLineItem } from '../utils/fileParser';
 import { formatCurrency, isDeployComplete } from '../utils/margins';
 import {
@@ -312,50 +313,41 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
 
 /* ─── Helpers ─── */
 
-interface QuarterlyRow {
+const MONTH_SHORT = MONTH_LABELS_SHORT;
+
+interface MonthlyRow {
   projectId: string;
   account: string;
   project: string;
   color: string;
-  q1: number;
-  q2: number;
-  q3: number;
-  q4: number;
+  months: number[]; // 12 values
   total: number;
 }
 
-function aggregateQuarterly(perProject: ProjectMonthlyJH[], year: number = 2026): QuarterlyRow[] {
+function aggregateMonthlyRows(perProject: ProjectMonthlyJH[], year: number = 2026): MonthlyRow[] {
   return perProject.map((pp, i) => {
-    const q = [0, 0, 0, 0];
+    const months = new Array(12).fill(0);
     for (const [mk, jh] of Object.entries(pp.months)) {
       const [y, mStr] = mk.split('-');
       if (Number(y) !== year) continue;
-      const mIdx = Number(mStr) - 1; // 0-11
-      const qIdx = Math.floor(mIdx / 3);
-      q[qIdx] += jh;
+      const mIdx = Number(mStr) - 1;
+      months[mIdx] += jh;
     }
     return {
       projectId: pp.projectId,
       account: pp.account,
       project: pp.project,
       color: getProjectColor(i),
-      q1: Math.round(q[0] * 10) / 10,
-      q2: Math.round(q[1] * 10) / 10,
-      q3: Math.round(q[2] * 10) / 10,
-      q4: Math.round(q[3] * 10) / 10,
-      total: Math.round((q[0] + q[1] + q[2] + q[3]) * 10) / 10,
+      months: months.map(v => Math.round(v * 10) / 10),
+      total: Math.round(months.reduce((s, v) => s + v, 0) * 10) / 10,
     };
   });
 }
 
-function QuarterlyTable({ rows, title }: { rows: QuarterlyRow[]; title: string }) {
-  const totals = {
-    q1: Math.round(rows.reduce((s, r) => s + r.q1, 0) * 10) / 10,
-    q2: Math.round(rows.reduce((s, r) => s + r.q2, 0) * 10) / 10,
-    q3: Math.round(rows.reduce((s, r) => s + r.q3, 0) * 10) / 10,
-    q4: Math.round(rows.reduce((s, r) => s + r.q4, 0) * 10) / 10,
-    total: Math.round(rows.reduce((s, r) => s + r.total, 0) * 10) / 10,
-  };
+function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
+  const totals = new Array(12).fill(0);
+  for (const r of rows) { for (let i = 0; i < 12; i++) totals[i] += r.months[i]; }
+  const grandTotal = totals.reduce((s, v) => s + v, 0);
 
   return (
     <>
@@ -367,10 +359,7 @@ function QuarterlyTable({ rows, title }: { rows: QuarterlyRow[]; title: string }
               <th></th>
               <th>Account</th>
               <th>Project</th>
-              <th className="right">Q1</th>
-              <th className="right">Q2</th>
-              <th className="right">Q3</th>
-              <th className="right">Q4</th>
+              {MONTH_SHORT.map(m => <th key={m} className="right">{m}</th>)}
               <th className="right">Total</th>
             </tr>
           </thead>
@@ -380,10 +369,7 @@ function QuarterlyTable({ rows, title }: { rows: QuarterlyRow[]; title: string }
                 <td><span className="color-dot" style={{ backgroundColor: row.color }} /></td>
                 <td className="customer-name">{row.account}</td>
                 <td>{row.project}</td>
-                <td className="right">{row.q1 > 0 ? row.q1.toFixed(1) : '—'}</td>
-                <td className="right">{row.q2 > 0 ? row.q2.toFixed(1) : '—'}</td>
-                <td className="right">{row.q3 > 0 ? row.q3.toFixed(1) : '—'}</td>
-                <td className="right">{row.q4 > 0 ? row.q4.toFixed(1) : '—'}</td>
+                {row.months.map((v, i) => <td key={i} className="right">{v > 0 ? v.toFixed(1) : '—'}</td>)}
                 <td className="right"><strong>{row.total.toFixed(1)}</strong></td>
               </tr>
             ))}
@@ -393,11 +379,8 @@ function QuarterlyTable({ rows, title }: { rows: QuarterlyRow[]; title: string }
               <td></td>
               <td><strong>Total ({rows.length})</strong></td>
               <td></td>
-              <td className="right"><strong>{totals.q1.toFixed(1)}</strong></td>
-              <td className="right"><strong>{totals.q2.toFixed(1)}</strong></td>
-              <td className="right"><strong>{totals.q3.toFixed(1)}</strong></td>
-              <td className="right"><strong>{totals.q4.toFixed(1)}</strong></td>
-              <td className="right"><strong>{totals.total.toFixed(1)}</strong></td>
+              {totals.map((v, i) => <td key={i} className="right"><strong>{(Math.round(v * 10) / 10).toFixed(1)}</strong></td>)}
+              <td className="right"><strong>{(Math.round(grandTotal * 10) / 10).toFixed(1)}</strong></td>
             </tr>
           </tfoot>
         </table>
@@ -476,8 +459,6 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
 
   const deploySim = useMemo(() => computeDeploySimulation(projects, targets, updateDate), [projects, targets, updateDate]);
   const runSim = useMemo(() => computeRunSimulation(projects, targets, updateDate), [projects, targets, updateDate]);
-  const deployQuarterly = useMemo(() => aggregateQuarterly(deploySim.perProject), [deploySim]);
-  const runQuarterly = useMemo(() => aggregateQuarterly(runSim.perProject), [runSim]);
 
   const chartData = useMemo(() => {
     let accumDemand = 0;
@@ -564,41 +545,27 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
         </ResponsiveContainer>
       </div>
 
-      {/* Demand vs Capacity quarterly summary */}
-      <h3>Demand vs Capacity by Quarter</h3>
+      {/* Demand vs Capacity monthly summary */}
+      <h3>Demand vs Capacity by Month</h3>
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
               <th></th>
-              <th className="right">Q1</th>
-              <th className="right">Q2</th>
-              <th className="right">Q3</th>
-              <th className="right">Q4</th>
+              {MONTH_SHORT.map(m => <th key={m} className="right">{m}</th>)}
               <th className="right">Total</th>
             </tr>
           </thead>
           <tbody>
             {(() => {
-              const qCap = [0, 0, 0, 0];
+              const mCap = new Array(12).fill(0);
               for (const m of members) {
-                qCap[0] += m.q1Days; qCap[1] += m.q2Days;
-                qCap[2] += m.q3Days; qCap[3] += m.q4Days;
+                for (let i = 0; i < 12; i++) mCap[i] += m[MONTH_KEYS[i]];
               }
-              const qDeploy = [
-                deployQuarterly.reduce((s, r) => s + r.q1, 0),
-                deployQuarterly.reduce((s, r) => s + r.q2, 0),
-                deployQuarterly.reduce((s, r) => s + r.q3, 0),
-                deployQuarterly.reduce((s, r) => s + r.q4, 0),
-              ];
-              const qRun = [
-                runQuarterly.reduce((s, r) => s + r.q1, 0),
-                runQuarterly.reduce((s, r) => s + r.q2, 0),
-                runQuarterly.reduce((s, r) => s + r.q3, 0),
-                runQuarterly.reduce((s, r) => s + r.q4, 0),
-              ];
-              const qDemand = qDeploy.map((d, i) => d + qRun[i]);
-              const qDelta = qCap.map((c, i) => c - qDemand[i]);
+              const mDeploy = deploySim.aggregated.map(a => a.total);
+              const mRun = runSim.aggregated.map(a => a.total);
+              const mDemand = mDeploy.map((d, i) => d + (mRun[i] || 0));
+              const mDelta = mCap.map((c, i) => c - (mDemand[i] || 0));
               const fmt = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
               const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0);
 
@@ -606,27 +573,27 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
                 <>
                   <tr>
                     <td><strong>Deploy Demand</strong></td>
-                    {qDeploy.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
-                    <td className="right"><strong>{fmt(sum(qDeploy))}</strong></td>
+                    {mDeploy.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    <td className="right"><strong>{fmt(sum(mDeploy))}</strong></td>
                   </tr>
                   <tr>
                     <td><strong>RUN Demand</strong></td>
-                    {qRun.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
-                    <td className="right"><strong>{fmt(sum(qRun))}</strong></td>
+                    {mRun.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    <td className="right"><strong>{fmt(sum(mRun))}</strong></td>
                   </tr>
                   <tr style={{ borderTop: '2px solid var(--color-border)' }}>
                     <td><strong>Total Demand</strong></td>
-                    {qDemand.map((v, i) => <td key={i} className="right"><strong>{fmt(v)}</strong></td>)}
-                    <td className="right"><strong>{fmt(sum(qDemand))}</strong></td>
+                    {mDemand.map((v, i) => <td key={i} className="right"><strong>{fmt(v)}</strong></td>)}
+                    <td className="right"><strong>{fmt(sum(mDemand))}</strong></td>
                   </tr>
                   <tr>
                     <td><strong>Capacity</strong></td>
-                    {qCap.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
-                    <td className="right"><strong>{fmt(sum(qCap))}</strong></td>
+                    {mCap.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    <td className="right"><strong>{fmt(sum(mCap))}</strong></td>
                   </tr>
                   <tr style={{ borderTop: '2px solid var(--color-border)' }}>
                     <td><strong>Delta</strong></td>
-                    {qDelta.map((v, i) => (
+                    {mDelta.map((v, i) => (
                       <td key={i} className="right">
                         <span className={v >= 0 ? 'text-success' : 'text-danger'}>
                           <strong>{v >= 0 ? '+' : ''}{fmt(v)}</strong>
@@ -634,8 +601,8 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
                       </td>
                     ))}
                     <td className="right">
-                      <span className={sum(qDelta) >= 0 ? 'text-success' : 'text-danger'}>
-                        <strong>{sum(qDelta) >= 0 ? '+' : ''}{fmt(sum(qDelta))}</strong>
+                      <span className={sum(mDelta) >= 0 ? 'text-success' : 'text-danger'}>
+                        <strong>{sum(mDelta) >= 0 ? '+' : ''}{fmt(sum(mDelta))}</strong>
                       </span>
                     </td>
                   </tr>
@@ -935,7 +902,7 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
         </ResponsiveContainer>
       </div>
 
-      <QuarterlyTable rows={aggregateQuarterly(perProject)} title="JH by Quarter" />
+      <MonthlyTable rows={aggregateMonthlyRows(perProject)} title="JH by Month" />
 
       <h3>Breakdown by Month</h3>
       <div className="table-wrapper">

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { TeamMember, Role } from '../types';
-import { ROLES } from '../types';
+import { ROLES, MONTH_KEYS, MONTH_LABELS_SHORT, totalDays } from '../types';
 import { calculateTeamCapacity, formatCurrency } from '../utils/margins';
 import { useSort } from '../hooks/useSort';
 import { Trash2, Plus, Users, Edit2, Check, X, Save, FolderOpen } from 'lucide-react';
@@ -18,13 +18,15 @@ interface TeamProps {
   loadTeam: (members: TeamMember[]) => void;
 }
 
+const DEFAULT_MONTHLY = 18;
+
 const EMPTY_FORM = {
   name: '',
   role: 'CSM' as Role,
-  q1Days: 55,
-  q2Days: 55,
-  q3Days: 55,
-  q4Days: 55,
+  m1: DEFAULT_MONTHLY, m2: DEFAULT_MONTHLY, m3: DEFAULT_MONTHLY,
+  m4: DEFAULT_MONTHLY, m5: DEFAULT_MONTHLY, m6: DEFAULT_MONTHLY,
+  m7: DEFAULT_MONTHLY, m8: DEFAULT_MONTHLY, m9: DEFAULT_MONTHLY,
+  m10: DEFAULT_MONTHLY, m11: DEFAULT_MONTHLY, m12: DEFAULT_MONTHLY,
   dailyRate: 400,
 };
 
@@ -118,20 +120,20 @@ export function Team({ members, addMember, updateMember, deleteMember, clearMemb
         ))}
       </div>
 
-      {/* Capacity by quarter */}
-      <h3>Capacity by Quarter</h3>
-      <div className="summary-grid-4">
-        {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map(q => (
-          <div key={q} className="summary-card neutral-card">
-            <span className="summary-label">{q}</span>
-            <span className="summary-value">{capacity.byQuarter[q]} days</span>
+      {/* Capacity by month */}
+      <h3>Capacity by Month</h3>
+      <div className="month-capacity-grid">
+        {MONTH_LABELS_SHORT.map(label => (
+          <div key={label} className="summary-card neutral-card">
+            <span className="summary-label">{label}</span>
+            <span className="summary-value">{Math.round((capacity.byMonth[label] || 0) * 10) / 10} days</span>
           </div>
         ))}
       </div>
 
       {/* Add member form */}
       <h3><Plus size={18} /> Add Team Member</h3>
-      <div className="add-member-form">
+      <div className="add-member-form add-member-monthly">
         <input
           type="text"
           placeholder="Name"
@@ -147,34 +149,17 @@ export function Team({ members, addMember, updateMember, deleteMember, clearMemb
         >
           {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input
-          type="number"
-          placeholder="Q1 days"
-          value={form.q1Days}
-          onChange={e => setForm({ ...form, q1Days: Number(e.target.value) })}
-          className="input input-sm"
-        />
-        <input
-          type="number"
-          placeholder="Q2 days"
-          value={form.q2Days}
-          onChange={e => setForm({ ...form, q2Days: Number(e.target.value) })}
-          className="input input-sm"
-        />
-        <input
-          type="number"
-          placeholder="Q3 days"
-          value={form.q3Days}
-          onChange={e => setForm({ ...form, q3Days: Number(e.target.value) })}
-          className="input input-sm"
-        />
-        <input
-          type="number"
-          placeholder="Q4 days"
-          value={form.q4Days}
-          onChange={e => setForm({ ...form, q4Days: Number(e.target.value) })}
-          className="input input-sm"
-        />
+        {MONTH_KEYS.map((mk, i) => (
+          <input
+            key={mk}
+            type="number"
+            placeholder={MONTH_LABELS_SHORT[i]}
+            value={form[mk]}
+            onChange={e => setForm({ ...form, [mk]: Number(e.target.value) })}
+            className="input input-sm"
+            title={MONTH_LABELS_SHORT[i]}
+          />
+        ))}
         <input
           type="number"
           placeholder="Rate/day"
@@ -294,26 +279,25 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
 }) {
   const enriched = useMemo(() => members.map(m => ({
     ...m,
-    totalDays: m.q1Days + m.q2Days + m.q3Days + m.q4Days,
-    totalCost: (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate,
+    totalDays: totalDays(m),
+    totalCost: totalDays(m) * m.dailyRate,
   })), [members]);
 
   const { sorted, toggle, sortIndicator } = useSort(enriched);
 
   return (
         <div className="table-wrapper">
-          <table className="data-table">
+          <table className="data-table team-monthly-table">
             <thead>
               <tr>
                 <th onClick={() => toggle('name')}>Name{sortIndicator('name')}</th>
                 <th onClick={() => toggle('role')}>Role{sortIndicator('role')}</th>
-                <th className="right" onClick={() => toggle('q1Days')}>Q1{sortIndicator('q1Days')}</th>
-                <th className="right" onClick={() => toggle('q2Days')}>Q2{sortIndicator('q2Days')}</th>
-                <th className="right" onClick={() => toggle('q3Days')}>Q3{sortIndicator('q3Days')}</th>
-                <th className="right" onClick={() => toggle('q4Days')}>Q4{sortIndicator('q4Days')}</th>
-                <th className="right" onClick={() => toggle('totalDays')}>Total Days{sortIndicator('totalDays')}</th>
-                <th className="right" onClick={() => toggle('dailyRate')}>Rate/day{sortIndicator('dailyRate')}</th>
-                <th className="right" onClick={() => toggle('totalCost')}>Total Cost{sortIndicator('totalCost')}</th>
+                {MONTH_KEYS.map((mk, i) => (
+                  <th key={mk} className="right" onClick={() => toggle(mk)}>{MONTH_LABELS_SHORT[i]}{sortIndicator(mk)}</th>
+                ))}
+                <th className="right" onClick={() => toggle('totalDays')}>Total{sortIndicator('totalDays')}</th>
+                <th className="right" onClick={() => toggle('dailyRate')}>Rate{sortIndicator('dailyRate')}</th>
+                <th className="right" onClick={() => toggle('totalCost')}>Cost{sortIndicator('totalCost')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -321,9 +305,9 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
               {sorted.map(m => {
                 const isEditing = editingId === m.id;
                 const ef = editForm!;
-                const total = m.totalDays;
 
                 if (isEditing && ef) {
+                  const efTotal = totalDays(ef);
                   return (
                     <tr key={m.id} className="editing-row">
                       <td><input className="input input-table" value={ef.name} onChange={e => setEditForm({ ...ef, name: e.target.value })} /></td>
@@ -332,13 +316,12 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                           {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
-                      <td><input className="input input-table input-sm" type="number" value={ef.q1Days} onChange={e => setEditForm({ ...ef, q1Days: Number(e.target.value) })} /></td>
-                      <td><input className="input input-table input-sm" type="number" value={ef.q2Days} onChange={e => setEditForm({ ...ef, q2Days: Number(e.target.value) })} /></td>
-                      <td><input className="input input-table input-sm" type="number" value={ef.q3Days} onChange={e => setEditForm({ ...ef, q3Days: Number(e.target.value) })} /></td>
-                      <td><input className="input input-table input-sm" type="number" value={ef.q4Days} onChange={e => setEditForm({ ...ef, q4Days: Number(e.target.value) })} /></td>
-                      <td className="right">{ef.q1Days + ef.q2Days + ef.q3Days + ef.q4Days}</td>
+                      {MONTH_KEYS.map(mk => (
+                        <td key={mk}><input className="input input-table input-sm" type="number" value={ef[mk]} onChange={e => setEditForm({ ...ef, [mk]: Number(e.target.value) })} /></td>
+                      ))}
+                      <td className="right">{efTotal}</td>
                       <td><input className="input input-table input-sm" type="number" value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} /></td>
-                      <td className="right">{formatCurrency((ef.q1Days + ef.q2Days + ef.q3Days + ef.q4Days) * ef.dailyRate)}</td>
+                      <td className="right">{formatCurrency(efTotal * ef.dailyRate)}</td>
                       <td className="actions-cell">
                         <button className="btn-icon btn-icon-success" onClick={saveEdit} title="Save"><Check size={14} /></button>
                         <button className="btn-icon" onClick={cancelEdit} title="Cancel"><X size={14} /></button>
@@ -351,13 +334,12 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                   <tr key={m.id}>
                     <td className="customer-name">{m.name}</td>
                     <td><span className="badge role-badge">{m.role}</span></td>
-                    <td className="right">{m.q1Days}</td>
-                    <td className="right">{m.q2Days}</td>
-                    <td className="right">{m.q3Days}</td>
-                    <td className="right">{m.q4Days}</td>
-                    <td className="right"><strong>{total}</strong></td>
+                    {MONTH_KEYS.map(mk => (
+                      <td key={mk} className="right">{m[mk]}</td>
+                    ))}
+                    <td className="right"><strong>{m.totalDays}</strong></td>
                     <td className="right">{formatCurrency(m.dailyRate)}</td>
-                    <td className="right">{formatCurrency(total * m.dailyRate)}</td>
+                    <td className="right">{formatCurrency(m.totalCost)}</td>
                     <td className="actions-cell">
                       <button className="btn-icon" onClick={() => startEdit(m)} title="Edit"><Edit2 size={14} /></button>
                       <button className="btn-icon" onClick={() => deleteMember(m.id)} title="Delete"><Trash2 size={14} /></button>
@@ -370,10 +352,9 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
               <tr>
                 <td><strong>Total ({members.length})</strong></td>
                 <td></td>
-                <td className="right"><strong>{members.reduce((s, m) => s + m.q1Days, 0)}</strong></td>
-                <td className="right"><strong>{members.reduce((s, m) => s + m.q2Days, 0)}</strong></td>
-                <td className="right"><strong>{members.reduce((s, m) => s + m.q3Days, 0)}</strong></td>
-                <td className="right"><strong>{members.reduce((s, m) => s + m.q4Days, 0)}</strong></td>
+                {MONTH_KEYS.map(mk => (
+                  <td key={mk} className="right"><strong>{Math.round(members.reduce((s, m) => s + m[mk], 0) * 10) / 10}</strong></td>
+                ))}
                 <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0)}</strong></td>
                 <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0) > 0 ? formatCurrency(Math.round(enriched.reduce((s, m) => s + m.totalCost, 0) / enriched.reduce((s, m) => s + m.totalDays, 0))) : '\u2014'}</strong></td>
                 <td className="right"><strong>{formatCurrency(enriched.reduce((s, m) => s + m.totalCost, 0))}</strong></td>

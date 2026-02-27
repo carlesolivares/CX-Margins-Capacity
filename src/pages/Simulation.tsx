@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { ProjectRow, TeamMember, Targets, Role } from '../types';
-import { ROLES } from '../types';
+import type { ProjectRow, TeamMember, Targets, Role, MonthField } from '../types';
+import { ROLES, MONTH_KEYS, MONTH_LABELS_SHORT, totalDays as memberTotalDays } from '../types';
 import {
   formatCurrency,
 } from '../utils/margins';
@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download, TrendingUp } from 'lucide-react';
 
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SHORT_MONTHS = MONTH_LABELS_SHORT;
 
 function dateToMonthLabel(iso: string | undefined): string | null {
   if (!iso) return null;
@@ -32,15 +32,7 @@ interface SimulatedProject {
   goLive: string;
 }
 
-interface SimTeamMember {
-  id: string;
-  name: string;
-  role: Role;
-  q1Days: number;
-  q2Days: number;
-  q3Days: number;
-  q4Days: number;
-  dailyRate: number;
+interface SimTeamMember extends TeamMember {
   isNew: boolean;
 }
 
@@ -97,9 +89,10 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
       if (sm.isNew) return true;
       const orig = members.find(m => m.id === sm.id);
       if (!orig) return true;
-      return sm.q1Days !== orig.q1Days || sm.q2Days !== orig.q2Days ||
-        sm.q3Days !== orig.q3Days || sm.q4Days !== orig.q4Days ||
-        sm.dailyRate !== orig.dailyRate || sm.role !== orig.role || sm.name !== orig.name;
+      for (const mk of MONTH_KEYS) {
+        if (sm[mk] !== orig[mk]) return true;
+      }
+      return sm.dailyRate !== orig.dailyRate || sm.role !== orig.role || sm.name !== orig.name;
     });
   }, [simTeam, members]);
 
@@ -157,75 +150,67 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
 
   const capacityForChart = hasTeamChanges ? simCapacity : baseCapacity;
 
-  const MAX_JH_PER_QUARTER = 55;
+  const MAX_JH_PER_MONTH = 20;
   const PROTECTED_ROLES: Role[] = ['CSM', 'PMO'];
   const ADJUSTABLE_ROLES: Role[] = ROLES.filter(r => !PROTECTED_ROLES.includes(r));
 
   /** Auto-balance: adjust non-protected roles so capacity ≈ demand.
    *  Rules:
-   *  - Past and current quarters are frozen (only future quarters change)
+   *  - Past and current months are frozen (only future months change)
    *  - CSM and PMO are never reduced
-   *  - Cap at 55 JH/person/quarter */
+   *  - Cap at 20 JH/person/month */
   const autoBalance = () => {
     const today = new Date();
-    const currentQ = Math.floor(today.getMonth() / 3); // 0-based: 0=Q1, 1=Q2…
+    const currentMonth = today.getMonth(); // 0-based
 
-    // Sum demand per quarter from monthly demand data
-    const demandQ = [0, 0, 0, 0];
-    for (let m = 0; m < 12; m++) {
-      const q = Math.floor(m / 3);
-      demandQ[q] += demandByMonth[m]?.total || 0;
-    }
-
-    // Sum capacity from non-adjustable (protected) roles per quarter
-    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
-    const nonAdjCapQ = [0, 0, 0, 0];
+    // Sum capacity from non-adjustable (protected) roles per month
+    const nonAdjCap = new Array(12).fill(0);
     for (const m of simTeam) {
       if (PROTECTED_ROLES.includes(m.role)) {
-        nonAdjCapQ[0] += m.q1Days;
-        nonAdjCapQ[1] += m.q2Days;
-        nonAdjCapQ[2] += m.q3Days;
-        nonAdjCapQ[3] += m.q4Days;
+        for (let i = 0; i < 12; i++) {
+          nonAdjCap[i] += m[MONTH_KEYS[i]];
+        }
       }
     }
 
-    // Target adjustable capacity per quarter
-    const targetAdjCapQ = demandQ.map((d, q) => Math.max(0, d - nonAdjCapQ[q]));
+    // Target adjustable capacity per month
+    const targetAdjCap = new Array(12).fill(0).map((_, i) =>
+      Math.max(0, (demandByMonth[i]?.total || 0) - nonAdjCap[i])
+    );
 
     const adjustableIds = simTeam
       .filter(m => ADJUSTABLE_ROLES.includes(m.role))
       .map(m => m.id);
     if (adjustableIds.length === 0) return;
 
-    // Build a map of new values: memberId -> { q1Days, q2Days, q3Days, q4Days }
+    // Build a map of new values
     const newValues: Record<string, Record<string, number>> = {};
     for (const id of adjustableIds) {
       const m = simTeam.find(t => t.id === id)!;
-      newValues[id] = { q1Days: m.q1Days, q2Days: m.q2Days, q3Days: m.q3Days, q4Days: m.q4Days };
+      const vals: Record<string, number> = {};
+      for (const mk of MONTH_KEYS) vals[mk] = m[mk];
+      newValues[id] = vals;
     }
 
-    // Only adjust future quarters — past and current are frozen
-    for (let q = 0; q < 4; q++) {
-      const key = qKeys[q];
+    // Only adjust future months
+    for (let mi = 0; mi < 12; mi++) {
+      const mk = MONTH_KEYS[mi];
+      if (mi <= currentMonth) continue; // past and current month: frozen
 
-      if (q <= currentQ) continue; // past and current quarter: frozen
-
-      // Sort by current days descending — keep the busiest, zero out least busy first
+      // Sort by current days descending
       const sorted = [...adjustableIds].sort((a, b) => {
-        const aVal = simTeam.find(t => t.id === a)![key];
-        const bVal = simTeam.find(t => t.id === b)![key];
+        const aVal = simTeam.find(t => t.id === a)![mk as MonthField];
+        const bVal = simTeam.find(t => t.id === b)![mk as MonthField];
         return bVal - aVal;
       });
 
-      // Future quarters: fill busiest first, zero out the rest
-      let remaining = targetAdjCapQ[q];
-
+      let remaining = targetAdjCap[mi];
       for (const id of sorted) {
         if (remaining <= 0) {
-          newValues[id][key] = 0;
+          newValues[id][mk] = 0;
         } else {
-          const give = Math.min(MAX_JH_PER_QUARTER, remaining);
-          newValues[id][key] = Math.round(give);
+          const give = Math.min(MAX_JH_PER_MONTH, remaining);
+          newValues[id][mk] = Math.round(give);
           remaining -= give;
         }
       }
@@ -237,10 +222,10 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
         const vals = newValues[m.id];
         return {
           ...m,
-          q1Days: vals.q1Days,
-          q2Days: vals.q2Days,
-          q3Days: vals.q3Days,
-          q4Days: vals.q4Days,
+          m1: vals.m1, m2: vals.m2, m3: vals.m3,
+          m4: vals.m4, m5: vals.m5, m6: vals.m6,
+          m7: vals.m7, m8: vals.m8, m9: vals.m9,
+          m10: vals.m10, m11: vals.m11, m12: vals.m12,
         };
       }),
     );
@@ -263,38 +248,31 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
     setSimTeam(prev => prev.filter(m => m.id !== id));
   };
 
-  // Financial summary data
+  // Financial summary data — monthly breakdown
   const financialData = useMemo(() => {
     const totalDeployRev = allProjects.reduce((s, p) => s + p.deployRevenue, 0);
     const totalRunRev = allProjects.reduce((s, p) => s + p.runRevenue, 0);
     const totalRevenue = totalDeployRev + totalRunRev;
 
-    // Team cost from simulated team
-    const teamCost = simTeamAsMembers.reduce((s, m) =>
-      s + (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate, 0);
+    const teamCost = simTeamAsMembers.reduce((s, m) => s + memberTotalDays(m) * m.dailyRate, 0);
+    const baseTeamCost = members.reduce((s, m) => s + memberTotalDays(m) * m.dailyRate, 0);
 
-    // Base team cost (original team)
-    const baseTeamCost = members.reduce((s, m) =>
-      s + (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate, 0);
-
-    // Quarterly breakdown
-    const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
-    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
-    const quarterlyData = quarters.map((q, qi) => {
-      const simCost = simTeamAsMembers.reduce((s, m) => s + m[qKeys[qi]] * m.dailyRate, 0);
-      const baseCost = members.reduce((s, m) => s + m[qKeys[qi]] * m.dailyRate, 0);
-      // Quarterly revenue: spread evenly for simplicity (demand-weighted would be more accurate)
-      const qDemand = demandByMonth.slice(qi * 3, qi * 3 + 3).reduce((s, d) => s + d.total, 0);
+    // Monthly breakdown
+    const monthlyData = MONTH_LABELS_SHORT.map((label, mi) => {
+      const mk = MONTH_KEYS[mi];
+      const simCost = simTeamAsMembers.reduce((s, m) => s + m[mk] * m.dailyRate, 0);
+      const baseCost = members.reduce((s, m) => s + m[mk] * m.dailyRate, 0);
+      const mDemand = demandByMonth[mi]?.total || 0;
       const totalDemand = demandByMonth.reduce((s, d) => s + d.total, 0);
-      const qRevShare = totalDemand > 0 ? qDemand / totalDemand : 0.25;
-      const qRevenue = totalRevenue * qRevShare;
+      const mRevShare = totalDemand > 0 ? mDemand / totalDemand : 1 / 12;
+      const mRevenue = totalRevenue * mRevShare;
       return {
-        quarter: q,
-        revenue: Math.round(qRevenue),
+        month: label,
+        revenue: Math.round(mRevenue),
         simCost: Math.round(simCost),
         baseCost: Math.round(baseCost),
-        simMargin: qRevenue > 0 ? Math.round(((qRevenue - simCost) / qRevenue) * 1000) / 10 : 0,
-        baseMargin: qRevenue > 0 ? Math.round(((qRevenue - baseCost) / qRevenue) * 1000) / 10 : 0,
+        simMargin: mRevenue > 0 ? Math.round(((mRevenue - simCost) / mRevenue) * 1000) / 10 : 0,
+        baseMargin: mRevenue > 0 ? Math.round(((mRevenue - baseCost) / mRevenue) * 1000) / 10 : 0,
       };
     });
 
@@ -305,7 +283,7 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
       totalRevenue, totalDeployRev, totalRunRev,
       teamCost, baseTeamCost,
       simMargin, baseMargin,
-      quarterlyData,
+      monthlyData,
     };
   }, [allProjects, simTeamAsMembers, members, demandByMonth]);
 
@@ -403,7 +381,7 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
           <div className="sim-header" style={{ marginTop: 24 }}>
             <h3><Users size={18} /> Adjust Team Capacity</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" onClick={autoBalance} title="Scale team days so capacity matches demand per quarter">
+              <button className="btn btn-primary" onClick={autoBalance} title="Scale team days so capacity matches demand per month">
                 <Zap size={14} /> Auto-balance
               </button>
               {hasTeamChanges && (
@@ -414,7 +392,7 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
             </div>
           </div>
           <p className="settings-desc">
-            Edit existing team members or add new ones to simulate capacity changes. Auto-balance scales each member's quarterly days so total capacity matches demand. You can then adjust manually.
+            Edit existing team members or add new ones to simulate capacity changes. Auto-balance scales each member's monthly days so total capacity matches demand. You can then adjust manually.
           </p>
           <SimTeamTable
             simTeam={simTeam}
@@ -446,7 +424,7 @@ interface FinancialData {
   baseTeamCost: number;
   simMargin: number;
   baseMargin: number;
-  quarterlyData: { quarter: string; revenue: number; simCost: number; baseCost: number; simMargin: number; baseMargin: number }[];
+  monthlyData: { month: string; revenue: number; simCost: number; baseCost: number; simMargin: number; baseMargin: number }[];
 }
 
 function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: FinancialData; hasTeamChanges: boolean; hasSimProjects: boolean }) {
@@ -486,13 +464,13 @@ function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: Fina
         </div>
       </div>
 
-      {/* Quarterly margin chart */}
-      <h3>Quarterly Margin Forecast</h3>
+      {/* Monthly margin chart */}
+      <h3>Monthly Margin Forecast</h3>
       <div className="chart-container chart-full-width">
         <ResponsiveContainer width="100%" height={350}>
-          <ComposedChart data={data.quarterlyData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+          <ComposedChart data={data.monthlyData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="quarter" tick={{ fontSize: 12 }} />
+            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
             <YAxis yAxisId="eur" tickFormatter={v => formatCurrency(v as number)} tick={{ fontSize: 11 }} />
             <YAxis yAxisId="pct" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
             <Tooltip formatter={(value, name) => {
@@ -509,13 +487,13 @@ function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: Fina
         </ResponsiveContainer>
       </div>
 
-      {/* Quarterly table */}
-      <h3>Quarterly Breakdown</h3>
+      {/* Monthly table */}
+      <h3>Monthly Breakdown</h3>
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Quarter</th>
+              <th>Month</th>
               <th className="right">Revenue</th>
               <th className="right">{hasChanges ? 'Sim. Cost' : 'Team Cost'}</th>
               {hasChanges && <th className="right">Base Cost</th>}
@@ -524,18 +502,18 @@ function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: Fina
             </tr>
           </thead>
           <tbody>
-            {data.quarterlyData.map(q => (
-              <tr key={q.quarter}>
-                <td><strong>{q.quarter}</strong></td>
-                <td className="right">{formatCurrency(q.revenue)}</td>
-                <td className="right">{formatCurrency(q.simCost)}</td>
-                {hasChanges && <td className="right">{formatCurrency(q.baseCost)}</td>}
+            {data.monthlyData.map(row => (
+              <tr key={row.month}>
+                <td><strong>{row.month}</strong></td>
+                <td className="right">{formatCurrency(row.revenue)}</td>
+                <td className="right">{formatCurrency(row.simCost)}</td>
+                {hasChanges && <td className="right">{formatCurrency(row.baseCost)}</td>}
                 <td className="right">
-                  <span className={`badge ${q.simMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{q.simMargin}%</span>
+                  <span className={`badge ${row.simMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{row.simMargin}%</span>
                 </td>
                 {hasChanges && (
                   <td className="right">
-                    <span className={`badge ${q.baseMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{q.baseMargin}%</span>
+                    <span className={`badge ${row.baseMargin >= 0 ? 'healthy' : 'unhealthy'}`}>{row.baseMargin}%</span>
                   </td>
                 )}
               </tr>
@@ -574,7 +552,10 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
   const [editForm, setEditForm] = useState<SimTeamMember | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newForm, setNewForm] = useState<SimTeamMember>({
-    id: '', name: '', role: 'CSM', q1Days: 0, q2Days: 0, q3Days: 0, q4Days: 0, dailyRate: 400, isNew: true,
+    id: '', name: '', role: 'CSM',
+    m1: 0, m2: 0, m3: 0, m4: 0, m5: 0, m6: 0,
+    m7: 0, m8: 0, m9: 0, m10: 0, m11: 0, m12: 0,
+    dailyRate: 400, isNew: true,
   });
 
   const startEdit = (m: SimTeamMember) => { setEditingId(m.id); setEditForm({ ...m }); };
@@ -584,28 +565,32 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
   const handleAdd = () => {
     if (!newForm.name.trim()) return;
     addMember({ ...newForm, id: `sim-tm-${Date.now().toString(36)}` });
-    setNewForm({ id: '', name: '', role: 'CSM', q1Days: 0, q2Days: 0, q3Days: 0, q4Days: 0, dailyRate: 400, isNew: true });
+    setNewForm({
+      id: '', name: '', role: 'CSM',
+      m1: 0, m2: 0, m3: 0, m4: 0, m5: 0, m6: 0,
+      m7: 0, m8: 0, m9: 0, m10: 0, m11: 0, m12: 0,
+      dailyRate: 400, isNew: true,
+    });
     setShowAddForm(false);
   };
 
-  const totalDays = simTeam.reduce((s, m) => s + m.q1Days + m.q2Days + m.q3Days + m.q4Days, 0);
-  const totalCost = simTeam.reduce((s, m) => s + (m.q1Days + m.q2Days + m.q3Days + m.q4Days) * m.dailyRate, 0);
+  const td = simTeam.reduce((s, m) => s + memberTotalDays(m), 0);
+  const totalCost = simTeam.reduce((s, m) => s + memberTotalDays(m) * m.dailyRate, 0);
 
   return (
     <>
       <div className="table-wrapper">
-        <table className="data-table">
+        <table className="data-table team-monthly-table">
           <thead>
             <tr>
               <th>Name</th>
               <th>Role</th>
-              <th className="right">Q1</th>
-              <th className="right">Q2</th>
-              <th className="right">Q3</th>
-              <th className="right">Q4</th>
-              <th className="right">Total Days</th>
-              <th className="right">Rate/day</th>
-              <th className="right">Total Cost</th>
+              {MONTH_KEYS.map((mk, i) => (
+                <th key={mk} className="right">{SHORT_MONTHS[i]}</th>
+              ))}
+              <th className="right">Total</th>
+              <th className="right">Rate</th>
+              <th className="right">Cost</th>
               <th></th>
             </tr>
           </thead>
@@ -613,10 +598,10 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
             {simTeam.map(m => {
               const isEditing = editingId === m.id;
               const ef = editForm!;
-              const total = m.q1Days + m.q2Days + m.q3Days + m.q4Days;
+              const total = memberTotalDays(m);
 
               if (isEditing && ef) {
-                const efTotal = ef.q1Days + ef.q2Days + ef.q3Days + ef.q4Days;
+                const efTotal = memberTotalDays(ef);
                 return (
                   <tr key={m.id} className="editing-row">
                     <td><input className="input input-table" value={ef.name} onChange={e => setEditForm({ ...ef, name: e.target.value })} /></td>
@@ -625,12 +610,11 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                         {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
-                    <td className="right"><input className="input input-table" type="number" min={0} value={ef.q1Days} onChange={e => setEditForm({ ...ef, q1Days: Number(e.target.value) })} style={{ width: 50 }} /></td>
-                    <td className="right"><input className="input input-table" type="number" min={0} value={ef.q2Days} onChange={e => setEditForm({ ...ef, q2Days: Number(e.target.value) })} style={{ width: 50 }} /></td>
-                    <td className="right"><input className="input input-table" type="number" min={0} value={ef.q3Days} onChange={e => setEditForm({ ...ef, q3Days: Number(e.target.value) })} style={{ width: 50 }} /></td>
-                    <td className="right"><input className="input input-table" type="number" min={0} value={ef.q4Days} onChange={e => setEditForm({ ...ef, q4Days: Number(e.target.value) })} style={{ width: 50 }} /></td>
+                    {MONTH_KEYS.map(mk => (
+                      <td key={mk} className="right"><input className="input input-table input-sm" type="number" min={0} value={ef[mk]} onChange={e => setEditForm({ ...ef, [mk]: Number(e.target.value) })} style={{ width: 42 }} /></td>
+                    ))}
                     <td className="right">{efTotal}</td>
-                    <td className="right"><input className="input input-table" type="number" min={0} value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} style={{ width: 60 }} /></td>
+                    <td className="right"><input className="input input-table input-sm" type="number" min={0} value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} style={{ width: 60 }} /></td>
                     <td className="right">{formatCurrency(efTotal * ef.dailyRate)}</td>
                     <td className="actions-cell">
                       <button className="btn-icon btn-icon-success" onClick={saveEdit} title="Save"><Check size={14} /></button>
@@ -647,10 +631,9 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                     {m.isNew && <span className="badge" style={{ marginLeft: 6, background: '#dbeafe', color: '#1d4ed8' }}>New</span>}
                   </td>
                   <td><span className="badge role-badge">{m.role}</span></td>
-                  <td className="right">{m.q1Days}</td>
-                  <td className="right">{m.q2Days}</td>
-                  <td className="right">{m.q3Days}</td>
-                  <td className="right">{m.q4Days}</td>
+                  {MONTH_KEYS.map(mk => (
+                    <td key={mk} className="right">{m[mk]}</td>
+                  ))}
                   <td className="right">{total}</td>
                   <td className="right">{formatCurrency(m.dailyRate)}</td>
                   <td className="right">{formatCurrency(total * m.dailyRate)}</td>
@@ -668,12 +651,11 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
             <tr>
               <td><strong>Total ({simTeam.length})</strong></td>
               <td></td>
-              <td className="right"><strong>{simTeam.reduce((s, m) => s + m.q1Days, 0)}</strong></td>
-              <td className="right"><strong>{simTeam.reduce((s, m) => s + m.q2Days, 0)}</strong></td>
-              <td className="right"><strong>{simTeam.reduce((s, m) => s + m.q3Days, 0)}</strong></td>
-              <td className="right"><strong>{simTeam.reduce((s, m) => s + m.q4Days, 0)}</strong></td>
-              <td className="right"><strong>{totalDays}</strong></td>
-              <td className="right"><strong>{totalDays > 0 ? formatCurrency(Math.round(totalCost / totalDays)) : '\u2014'}</strong></td>
+              {MONTH_KEYS.map(mk => (
+                <td key={mk} className="right"><strong>{Math.round(simTeam.reduce((s, m) => s + m[mk], 0) * 10) / 10}</strong></td>
+              ))}
+              <td className="right"><strong>{td}</strong></td>
+              <td className="right"><strong>{td > 0 ? formatCurrency(Math.round(totalCost / td)) : '\u2014'}</strong></td>
               <td className="right"><strong>{formatCurrency(totalCost)}</strong></td>
               <td></td>
             </tr>
@@ -682,15 +664,14 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
       </div>
 
       {showAddForm ? (
-        <div className="add-member-form">
+        <div className="add-member-form add-member-monthly">
           <input className="input" placeholder="Name" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value })} />
           <select className="input" value={newForm.role} onChange={e => setNewForm({ ...newForm, role: e.target.value as Role })}>
             {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
-          <input className="input input-sm" type="number" placeholder="Q1" min={0} value={newForm.q1Days || ''} onChange={e => setNewForm({ ...newForm, q1Days: Number(e.target.value) })} />
-          <input className="input input-sm" type="number" placeholder="Q2" min={0} value={newForm.q2Days || ''} onChange={e => setNewForm({ ...newForm, q2Days: Number(e.target.value) })} />
-          <input className="input input-sm" type="number" placeholder="Q3" min={0} value={newForm.q3Days || ''} onChange={e => setNewForm({ ...newForm, q3Days: Number(e.target.value) })} />
-          <input className="input input-sm" type="number" placeholder="Q4" min={0} value={newForm.q4Days || ''} onChange={e => setNewForm({ ...newForm, q4Days: Number(e.target.value) })} />
+          {MONTH_KEYS.map((mk, i) => (
+            <input key={mk} className="input input-sm" type="number" placeholder={SHORT_MONTHS[i]} min={0} value={newForm[mk] || ''} onChange={e => setNewForm({ ...newForm, [mk]: Number(e.target.value) })} />
+          ))}
           <input className="input input-sm" type="number" placeholder="Rate" min={0} value={newForm.dailyRate || ''} onChange={e => setNewForm({ ...newForm, dailyRate: Number(e.target.value) })} />
           <button className="btn btn-primary" onClick={handleAdd} disabled={!newForm.name.trim()}>
             <Check size={14} /> Add

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
+import { MONTH_KEYS, MONTH_LABELS_SHORT as MONTH_LABELS } from '../types';
 import { formatCurrency, isDeployComplete, calculateProjectMargins } from '../utils/margins';
 import { computeProjections, computeTotalDemandByMonth, computeTeamCapacityByMonth } from '../utils/simulation';
 import type { ProjectProjection } from '../utils/simulation';
@@ -110,26 +111,24 @@ export function Report({ projects, members, targets }: ReportProps) {
 
     // Team cost forecast from today to Dec 31
     const today = new Date();
-    const currentQ = Math.floor(today.getMonth() / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
-    const qStartMonth = currentQ * 3;
-    const qStartDate = new Date(today.getFullYear(), qStartMonth, 1);
-    const qEndDate = new Date(today.getFullYear(), qStartMonth + 3, 0); // last day of quarter
-    const qTotalMs = qEndDate.getTime() - qStartDate.getTime();
-    const qElapsedMs = today.getTime() - qStartDate.getTime();
-    const remainingPct = 1 - (qTotalMs > 0 ? qElapsedMs / qTotalMs : 0);
+    const currentMonth = today.getMonth(); // 0-based: 0=Jan..11=Dec
+    const mStartDate = new Date(today.getFullYear(), currentMonth, 1);
+    const mEndDate = new Date(today.getFullYear(), currentMonth + 1, 0); // last day of current month
+    const mTotalMs = mEndDate.getTime() - mStartDate.getTime();
+    const mElapsedMs = today.getTime() - mStartDate.getTime();
+    const remainingPct = 1 - (mTotalMs > 0 ? mElapsedMs / mTotalMs : 0);
 
-    const qKeys = ['q1Days', 'q2Days', 'q3Days', 'q4Days'] as const;
     const forecastTeamCost = members.reduce((s, m) => {
       let memberForecast = 0;
-      for (let q = 0; q < 4; q++) {
-        const days = m[qKeys[q]];
-        if (q < currentQ) {
-          // Past quarter: already consumed, skip
-        } else if (q === currentQ) {
-          // Current quarter: remaining portion
+      for (let mi = 0; mi < 12; mi++) {
+        const days = m[MONTH_KEYS[mi]];
+        if (mi < currentMonth) {
+          // Past month: already consumed, skip
+        } else if (mi === currentMonth) {
+          // Current month: remaining portion
           memberForecast += days * remainingPct * m.dailyRate;
         } else {
-          // Future quarter: full cost
+          // Future month: full cost
           memberForecast += days * m.dailyRate;
         }
       }
@@ -143,7 +142,7 @@ export function Report({ projects, members, targets }: ReportProps) {
       deployConsumed, runConsumed, totalConsumed,
       deployRemaining, runRemaining, combinedRemaining,
       forecastTeamCost, forecastBalance,
-      currentQ, remainingPct,
+      currentMonth, remainingPct,
     };
   }, [deployAnalysis, runAnalysis, members, targets, projects]);
 
@@ -293,7 +292,7 @@ export function Report({ projects, members, targets }: ReportProps) {
         {/* Forecast: Remaining Budget vs Team Cost to Year-End */}
         <h4 style={{ marginTop: 24 }}>Forecast: Remaining Budget vs Team Cost to Year-End</h4>
         <p className="report-hint">
-          Team cost forecast from today (Q{financials.currentQ + 1}, {Math.round(financials.remainingPct * 100)}% remaining) through Q4.
+          Team cost forecast from today ({MONTH_LABELS[financials.currentMonth]}, {Math.round(financials.remainingPct * 100)}% remaining) through Dec.
           Compares remaining budget to upcoming team expenses.
         </p>
 
@@ -308,7 +307,7 @@ export function Report({ projects, members, targets }: ReportProps) {
           <div className="report-kpi-card">
             <span className="report-kpi-label">Team Cost (Remaining Year)</span>
             <span className="report-kpi-value">{formatCurrency(financials.forecastTeamCost)}</span>
-            <span className="report-kpi-sub">Q{financials.currentQ + 1} ({Math.round(financials.remainingPct * 100)}%) + Q{Math.min(financials.currentQ + 2, 4)}&ndash;Q4</span>
+            <span className="report-kpi-sub">{MONTH_LABELS[financials.currentMonth]} ({Math.round(financials.remainingPct * 100)}%) + remaining months</span>
           </div>
           <div className="report-kpi-card">
             <span className="report-kpi-label">Forecast Balance</span>
@@ -501,7 +500,7 @@ export function Report({ projects, members, targets }: ReportProps) {
               <p>Consider the following actions:</p>
               <ul>
                 <li>Add team members to cover the {Math.abs(capacityDemand.delta)} JH gap</li>
-                <li>Increase quarterly availability for existing team members</li>
+                <li>Increase monthly availability for existing team members</li>
                 <li>Prioritize and defer lower-priority projects</li>
                 <li>Outsource or use contractors for peak periods</li>
               </ul>

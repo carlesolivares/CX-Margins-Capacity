@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
-import { DEFAULT_TARGETS } from '../types';
+import { DEFAULT_TARGETS, migrateTeamMember } from '../types';
 import type { RevenueLineItem } from '../utils/fileParser';
 
 const PROJECTS_KEY = 'cx-app-projects-v2';
@@ -58,7 +58,9 @@ export function useProjectData() {
 }
 
 export function useTeamMembers() {
-  const [members, setMembers] = useState<TeamMember[]>(() => load<TeamMember>(TEAM_KEY));
+  const [members, setMembers] = useState<TeamMember[]>(() =>
+    load<Record<string, unknown>>(TEAM_KEY).map(migrateTeamMember)
+  );
 
   useEffect(() => { save(TEAM_KEY, members); }, [members]);
 
@@ -190,7 +192,9 @@ export function useSavedTeams() {
   const [savedTeams, setSavedTeams] = useState<SavedTeam[]>(() => {
     try {
       const raw = localStorage.getItem(SAVED_TEAMS_KEY);
-      return raw ? JSON.parse(raw) : [];
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as SavedTeam[];
+      return parsed.map(t => ({ ...t, members: t.members.map(m => migrateTeamMember(m as unknown as Record<string, unknown>)) }));
     } catch {
       return [];
     }

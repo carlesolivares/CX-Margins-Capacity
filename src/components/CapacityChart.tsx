@@ -1,6 +1,6 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { TeamCapacity } from '../types';
-import { ROLES } from '../types';
+import { ROLES, MONTH_LABELS_SHORT } from '../types';
 import { formatCurrency } from '../utils/margins';
 
 interface CapacityChartProps {
@@ -20,9 +20,9 @@ export function CapacityChart({ capacity, consumed }: CapacityChartProps) {
       cost: capacity.byRole[r].cost,
     }));
 
-  const quarterData = Object.entries(capacity.byQuarter).map(([q, days]) => ({
-    quarter: q,
-    available: days,
+  const monthData = MONTH_LABELS_SHORT.map(label => ({
+    month: label,
+    available: Math.round((capacity.byMonth[label] || 0) * 10) / 10,
   }));
 
   if (roleData.length === 0) {
@@ -66,11 +66,11 @@ export function CapacityChart({ capacity, consumed }: CapacityChartProps) {
           </ResponsiveContainer>
         </div>
         <div>
-          <h4>Available Days by Quarter</h4>
+          <h4>Available Days by Month</h4>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={quarterData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+            <BarChart data={monthData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="quarter" tick={{ fontSize: 12 }} />
+              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip formatter={(value) => [`${value} days`]} />
               <Legend />

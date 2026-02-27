@@ -1759,3 +1759,53 @@ h4 {
   background: var(--color-primary);
   color: white;
 }
+
+/* Monthly capacity grid */
+.month-capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.month-capacity-grid .summary-card {
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.month-capacity-grid .summary-label {
+  font-size: 11px;
+}
+
+.month-capacity-grid .summary-value {
+  font-size: 13px;
+}
+
+/* Monthly team tables need horizontal scroll */
+.team-monthly-table {
+  min-width: 900px;
+}
+
+.team-monthly-table th,
+.team-monthly-table td {
+  font-size: 12px;
+  padding: 6px 4px;
+}
+
+.team-monthly-table .input-sm {
+  width: 42px;
+  padding: 4px 2px;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Monthly add member form */
+.add-member-monthly {
+  overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+  .month-capacity-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}

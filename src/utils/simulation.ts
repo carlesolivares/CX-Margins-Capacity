@@ -1,5 +1,5 @@
 import type { ProjectRow, TeamMember, Targets } from '../types';
-import { DEFAULT_TARGETS } from '../types';
+import { DEFAULT_TARGETS, MONTH_KEYS } from '../types';
 import { deployEurToJH, runEurToJH, eurToJH } from './margins';
 import type { RevenueLineItem } from './fileParser';
 
@@ -280,8 +280,7 @@ function aggregateMonths(perProject: ProjectMonthlyJH[], year: number = 2026): M
 
 /**
  * Compute team capacity by month.
- * Each team member has Q1-Q4 days. We split each quarter evenly across its 3 months.
- * Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec.
+ * Each team member has m1..m12 days (one value per month).
  */
 export function computeTeamCapacityByMonth(
   members: TeamMember[],
@@ -295,13 +294,8 @@ export function computeTeamCapacityByMonth(
   }
 
   for (const member of members) {
-    const quarters = [member.q1Days, member.q2Days, member.q3Days, member.q4Days];
-    for (let q = 0; q < 4; q++) {
-      const perMonth = quarters[q] / 3;
-      for (let mOffset = 0; mOffset < 3; mOffset++) {
-        const m = q * 3 + mOffset;
-        monthTotals[monthKey(year, m)] += perMonth;
-      }
+    for (let m = 0; m < 12; m++) {
+      monthTotals[monthKey(year, m)] += member[MONTH_KEYS[m]];
     }
   }
 
@@ -320,8 +314,7 @@ export function computeTeamCapacityByMonth(
 
 /**
  * Compute simulated team capacity by month, applying role overrides.
- * Each role's quarterly days are adjusted by daysDelta and headcount delta,
- * then split evenly across the 3 months of each quarter.
+ * Each role's monthly days are adjusted by daysDelta (spread proportionally) and headcount delta.
  */
 export function computeSimulatedCapacityByMonth(
   members: TeamMember[],
@@ -342,30 +335,20 @@ export function computeSimulatedCapacityByMonth(
 
     if (simCount === 0 || baseCount === 0) continue;
 
-    // Average quarterly days per person for this role
-    const avgQ = [
-      roleMembers.reduce((s, m) => s + m.q1Days, 0) / baseCount,
-      roleMembers.reduce((s, m) => s + m.q2Days, 0) / baseCount,
-      roleMembers.reduce((s, m) => s + m.q3Days, 0) / baseCount,
-      roleMembers.reduce((s, m) => s + m.q4Days, 0) / baseCount,
-    ];
+    // Average monthly days per person for this role
+    const avgMonthly: number[] = [];
+    for (let m = 0; m < 12; m++) {
+      avgMonthly.push(roleMembers.reduce((s, mem) => s + mem[MONTH_KEYS[m]], 0) / baseCount);
+    }
 
-    // Total annual days per person (for computing daysDelta spread)
-    const totalAnnualPerPerson = avgQ.reduce((s, v) => s + v, 0);
+    const totalAnnualPerPerson = avgMonthly.reduce((s, v) => s + v, 0);
 
-    for (let q = 0; q < 4; q++) {
-      // Spread daysDelta proportionally across quarters
-      const quarterDelta = totalAnnualPerPerson > 0
-        ? override.daysDelta * (avgQ[q] / totalAnnualPerPerson)
-        : override.daysDelta / 4;
-      const perPerson = Math.max(0, avgQ[q] + quarterDelta);
-      const quarterTotal = simCount * perPerson;
-      const perMonth = quarterTotal / 3;
-
-      for (let mOffset = 0; mOffset < 3; mOffset++) {
-        const m = q * 3 + mOffset;
-        monthTotals[monthKey(year, m)] += perMonth;
-      }
+    for (let m = 0; m < 12; m++) {
+      const monthDelta = totalAnnualPerPerson > 0
+        ? override.daysDelta * (avgMonthly[m] / totalAnnualPerPerson)
+        : override.daysDelta / 12;
+      const perPerson = Math.max(0, avgMonthly[m] + monthDelta);
+      monthTotals[monthKey(year, m)] += simCount * perPerson;
     }
   }
 
