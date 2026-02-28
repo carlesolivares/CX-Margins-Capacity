@@ -126,6 +126,20 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
     : 0;
   const runHealthyCount = runProjects.filter(p => p.runMarginProjected >= targets.runMargin).length;
 
+  // Combined global margin (Deploy + RUN)
+  const allMarginProjects = adjustedProjections.filter(p => p.deployRevenue > 0 || p.runRevenue > 0);
+  const totalGlobalRev = totalDeployRev + totalRunRev;
+  const totalGlobalProjected = totalDeployProjected + totalRunProjected;
+  const combinedGlobalMargin = totalGlobalRev > 0
+    ? Math.round(((totalGlobalRev - totalGlobalProjected) / totalGlobalRev) * 1000) / 10
+    : 0;
+  const globalHealthyCount = allMarginProjects.filter(p => {
+    const rev = p.deployRevenue + p.runRevenue;
+    const cost = p.deployProjected + p.runProjected;
+    const margin = rev > 0 ? ((rev - cost) / rev) * 100 : 0;
+    return margin >= targets.globalMargin;
+  }).length;
+
   const updateMonthLabel = dateToMonthLabel(updateDate);
 
   return (
@@ -181,7 +195,38 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
 
       {tab === 'margins' && (
         <>
-          {/* Global Margin Dashboard */}
+          {/* Combined Global Margin Dashboard */}
+          <div className="projection-global" style={{ marginBottom: 8 }}>
+            <div className="projection-global-card" style={{ borderLeft: '4px solid #6366f1' }}>
+              <h4>Global &mdash; Combined Projected Margin</h4>
+              <div className="projection-kpi-row">
+                <div className="projection-kpi">
+                  <span className="projection-kpi-label">Total Revenue</span>
+                  <span className="projection-kpi-value">{formatCurrency(totalGlobalRev)}</span>
+                  <span className="projection-kpi-sub">Deploy: {formatCurrency(totalDeployRev)} · RUN: {formatCurrency(totalRunRev)}</span>
+                </div>
+                <div className="projection-kpi">
+                  <span className="projection-kpi-label">Total Projected Cost</span>
+                  <span className="projection-kpi-value">{formatCurrency(totalGlobalProjected)}</span>
+                  <span className="projection-kpi-sub">Deploy: {formatCurrency(totalDeployProjected)} · RUN: {formatCurrency(totalRunProjected)}</span>
+                </div>
+                <div className="projection-kpi">
+                  <span className="projection-kpi-label">Combined Margin</span>
+                  <span className={`projection-kpi-value ${combinedGlobalMargin >= targets.globalMargin ? 'healthy' : combinedGlobalMargin >= 0 ? 'warning' : 'unhealthy'}`}>
+                    {combinedGlobalMargin}%
+                  </span>
+                  <span className="projection-kpi-sub">Target: {targets.globalMargin}% · Deploy: {globalDeployMargin}% · RUN: {globalRunMargin}%</span>
+                </div>
+                <div className="projection-kpi">
+                  <span className="projection-kpi-label">Projects</span>
+                  <span className="projection-kpi-value">{allMarginProjects.length}</span>
+                  <span className="projection-kpi-sub">{globalHealthyCount} healthy / {allMarginProjects.length - globalHealthyCount} at risk</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Deploy & RUN Margin Dashboard */}
           <div className="projection-global">
             <div className="projection-global-card">
               <h4>Deploy &mdash; Global Projected Margin</h4>
