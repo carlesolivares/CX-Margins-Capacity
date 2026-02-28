@@ -338,8 +338,8 @@ function aggregateMonthlyRows(perProject: ProjectMonthlyJH[], year: number = 202
       account: pp.account,
       project: pp.project,
       color: getProjectColor(i),
-      months: months.map(v => Math.round(v * 10) / 10),
-      total: Math.round(months.reduce((s, v) => s + v, 0) * 10) / 10,
+      months: months.map(v => Math.round(v)),
+      total: Math.round(months.reduce((s, v) => s + v, 0)),
     };
   });
 }
@@ -369,8 +369,8 @@ function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
                 <td><span className="color-dot" style={{ backgroundColor: row.color }} /></td>
                 <td className="customer-name">{row.account}</td>
                 <td>{row.project}</td>
-                {row.months.map((v, i) => <td key={i} className="right">{v > 0 ? v.toFixed(1) : '—'}</td>)}
-                <td className="right"><strong>{row.total.toFixed(1)}</strong></td>
+                {row.months.map((v, i) => <td key={i} className="right">{v > 0 ? v : '—'}</td>)}
+                <td className="right"><strong>{row.total}</strong></td>
               </tr>
             ))}
           </tbody>
@@ -379,8 +379,8 @@ function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
               <td></td>
               <td><strong>Total ({rows.length})</strong></td>
               <td></td>
-              {totals.map((v, i) => <td key={i} className="right"><strong>{(Math.round(v * 10) / 10).toFixed(1)}</strong></td>)}
-              <td className="right"><strong>{(Math.round(grandTotal * 10) / 10).toFixed(1)}</strong></td>
+              {totals.map((v, i) => <td key={i} className="right"><strong>{Math.round(v)}</strong></td>)}
+              <td className="right"><strong>{Math.round(grandTotal)}</strong></td>
             </tr>
           </tfoot>
         </table>
@@ -471,8 +471,8 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
         month: d.label,
         demand: d.total,
         capacity: cap,
-        accumDemand: Math.round(accumDemand * 10) / 10,
-        accumCapacity: Math.round(accumCapacity * 10) / 10,
+        accumDemand: Math.round(accumDemand),
+        accumCapacity: Math.round(accumCapacity),
       };
     });
   }, [demand, capacity]);
@@ -489,16 +489,16 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
           <div className="projection-kpi-row">
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Demand</span>
-              <span className="projection-kpi-value">{(Math.round(totalDemand * 10) / 10).toFixed(1)} JH</span>
+              <span className="projection-kpi-value">{Math.round(totalDemand)} JH</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Capacity</span>
-              <span className="projection-kpi-value">{(Math.round(totalCapacity * 10) / 10).toFixed(1)} JH</span>
+              <span className="projection-kpi-value">{Math.round(totalCapacity)} JH</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Delta</span>
               <span className={`projection-kpi-value ${delta >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {delta >= 0 ? '+' : ''}{(Math.round(delta * 10) / 10).toFixed(1)} JH
+                {delta >= 0 ? '+' : ''}{Math.round(delta)} JH
               </span>
               <span className="projection-kpi-sub">{delta >= 0 ? 'Surplus' : 'Deficit'}</span>
             </div>
@@ -513,7 +513,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="month" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
-            <Tooltip formatter={(value, name) => [`${Number(value).toFixed(1)} JH`, name === 'demand' ? 'Demand' : 'Capacity']} />
+            <Tooltip formatter={(value, name) => [`${Math.round(Number(value))} JH`, name === 'demand' ? 'Demand' : 'Capacity']} />
             <Legend />
             <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
@@ -532,7 +532,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <XAxis dataKey="month" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
             <Tooltip formatter={(value, name) => [
-              `${Number(value).toFixed(1)} JH`,
+              `${Math.round(Number(value))} JH`,
               name === 'accumDemand' ? 'Accumulated Demand' : 'Accumulated Capacity',
             ]} />
             <Legend />
@@ -566,7 +566,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               const mRun = runSim.aggregated.map(a => a.total);
               const mDemand = mDeploy.map((d, i) => d + (mRun[i] || 0));
               const mDelta = mCap.map((c, i) => c - (mDemand[i] || 0));
-              const fmt = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
+              const fmt = (v: number) => String(Math.round(v));
               const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0);
 
               return (
@@ -635,18 +635,18 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               return (
                 <tr key={row.month}>
                   <td>{row.month}</td>
-                  <td className="right">{row.demand.toFixed(1)}</td>
-                  <td className="right">{row.capacity.toFixed(1)}</td>
+                  <td className="right">{Math.round(row.demand)}</td>
+                  <td className="right">{Math.round(row.capacity)}</td>
                   <td className="right">
                     <span className={monthDelta >= 0 ? 'text-success' : 'text-danger'}>
-                      {monthDelta >= 0 ? '+' : ''}{monthDelta.toFixed(1)}
+                      {monthDelta >= 0 ? '+' : ''}{Math.round(monthDelta)}
                     </span>
                   </td>
-                  <td className="right">{row.accumDemand.toFixed(1)}</td>
-                  <td className="right">{row.accumCapacity.toFixed(1)}</td>
+                  <td className="right">{Math.round(row.accumDemand)}</td>
+                  <td className="right">{Math.round(row.accumCapacity)}</td>
                   <td className="right">
                     <span className={accumDelta >= 0 ? 'text-success' : 'text-danger'}>
-                      {accumDelta >= 0 ? '+' : ''}{accumDelta.toFixed(1)}
+                      {accumDelta >= 0 ? '+' : ''}{Math.round(accumDelta)}
                     </span>
                   </td>
                 </tr>
@@ -889,7 +889,7 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
             <Tooltip
               formatter={(value, name) => {
                 const entry = projectEntries.find(e => e.id === name);
-                return [`${Number(value).toFixed(1)} JH`, entry?.name || name];
+                return [`${Math.round(Number(value))} JH`, entry?.name || name];
               }}
             />
             {projectEntries.map(entry => (
@@ -928,10 +928,10 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
                   <td>{pp.project}</td>
                   {aggregated.map(a => (
                     <td key={a.month} className="right">
-                      {(pp.months[a.month] || 0) > 0 ? (pp.months[a.month]).toFixed(1) : '—'}
+                      {(pp.months[a.month] || 0) > 0 ? Math.round(pp.months[a.month]) : '—'}
                     </td>
                   ))}
-                  <td className="right"><strong>{entry.totalJH.toFixed(1)}</strong></td>
+                  <td className="right"><strong>{Math.round(entry.totalJH)}</strong></td>
                 </tr>
               );
             })}
@@ -942,10 +942,10 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
               <td><strong>Total</strong></td>
               <td></td>
               {aggregated.map(a => (
-                <td key={a.month} className="right"><strong>{a.total.toFixed(1)}</strong></td>
+                <td key={a.month} className="right"><strong>{Math.round(a.total)}</strong></td>
               ))}
               <td className="right">
-                <strong>{aggregated.reduce((s, a) => s + a.total, 0).toFixed(1)}</strong>
+                <strong>{Math.round(aggregated.reduce((s, a) => s + a.total, 0))}</strong>
               </td>
             </tr>
           </tfoot>

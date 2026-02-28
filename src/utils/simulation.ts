@@ -91,7 +91,7 @@ function spreadByMonth(totalJH: number, startDate: Date, endDate: Date): Record<
   const totalDays = entries.reduce((s, e) => s + e.days, 0);
 
   for (const e of entries) {
-    result[e.key] = Math.round((totalJH * e.days / totalDays) * 10) / 10;
+    result[e.key] = Math.round(totalJH * e.days / totalDays);
   }
   return result;
 }
@@ -119,7 +119,7 @@ function spreadByMonthWithHypercare(totalJH: number, startDate: Date, endDate: D
   });
 
   for (const { key, w } of weighted) {
-    result[key] = Math.round((totalJH * w / weightedTotal) * 10) / 10;
+    result[key] = Math.round(totalJH * w / weightedTotal);
   }
   return result;
 }
@@ -272,7 +272,7 @@ function aggregateMonths(perProject: ProjectMonthlyJH[], year: number = 2026): M
     return {
       month: mk,
       label: MONTH_LABELS[m],
-      total: Math.round(total * 10) / 10,
+      total: Math.round(total),
       byProject,
     };
   });
@@ -306,7 +306,7 @@ export function computeTeamCapacityByMonth(
     return {
       month: mk,
       label: MONTH_LABELS[monthIdx] || mk,
-      total: Math.round(monthTotals[mk] * 10) / 10,
+      total: Math.round(monthTotals[mk]),
       byProject: {},
     };
   });
@@ -359,7 +359,7 @@ export function computeSimulatedCapacityByMonth(
     return {
       month: mk,
       label: MONTH_LABELS[monthIdx] || mk,
-      total: Math.round(monthTotals[mk] * 10) / 10,
+      total: Math.round(monthTotals[mk]),
       byProject: {},
     };
   });
@@ -386,7 +386,7 @@ export function computeTotalDemandByMonth(
     return {
       month: mk,
       label: MONTH_LABELS[m],
-      total: Math.round(((dAgg?.total || 0) + (rAgg?.total || 0)) * 10) / 10,
+      total: Math.round((dAgg?.total || 0) + (rAgg?.total || 0)),
       byProject: {},
     };
   });

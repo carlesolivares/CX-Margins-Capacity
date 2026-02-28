@@ -77,14 +77,14 @@ export function Report({ projects, members, targets }: ReportProps) {
       totalDemand += d.total;
       totalCapacity += cap;
       if (d.total > cap && d.total > 0) {
-        deficits.push({ month: d.label, gap: Math.round((d.total - cap) * 10) / 10 });
+        deficits.push({ month: d.label, gap: Math.round(d.total - cap) });
       }
     });
 
     return {
-      totalDemand: Math.round(totalDemand * 10) / 10,
-      totalCapacity: Math.round(totalCapacity * 10) / 10,
-      delta: Math.round((totalCapacity - totalDemand) * 10) / 10,
+      totalDemand: Math.round(totalDemand),
+      totalCapacity: Math.round(totalCapacity),
+      delta: Math.round(totalCapacity - totalDemand),
       deficits,
     };
   }, [projects, members, targets]);

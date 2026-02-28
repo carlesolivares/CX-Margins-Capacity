@@ -107,14 +107,14 @@ export function calculateTeamCapacity(members: TeamMember[]): TeamCapacity {
     totalCost += cost;
   }
 
-  // Round all day values to 1 decimal
+  // Round all day values to integers
   for (const role of ROLES) {
-    byRole[role].days = Math.round(byRole[role].days * 10) / 10;
+    byRole[role].days = Math.round(byRole[role].days);
   }
   for (const label of MONTH_LABELS_SHORT) {
-    byMonth[label] = Math.round(byMonth[label] * 10) / 10;
+    byMonth[label] = Math.round(byMonth[label]);
   }
-  return { totalAvailableDays: Math.round(totalAvailableDays * 10) / 10, totalConsumedDays: 0, totalCost, byRole, byMonth };
+  return { totalAvailableDays: Math.round(totalAvailableDays), totalConsumedDays: 0, totalCost, byRole, byMonth };
 }
 
 /** Get consumed conso in EUR and converted to JH for display */
@@ -211,15 +211,15 @@ export function formatPercent(value: number): string {
 
 /** Convert EUR to JH for display */
 export function eurToJH(eur: number, rate: number = DEFAULT_JH_RATE): number {
-  return Math.round(eur / rate * 10) / 10;
+  return Math.round(eur / rate);
 }
 
 /** Deploy JH = Deploy € * (100 - deployMargin%) / 400 */
 export function deployEurToJH(eur: number, deployMarginPct: number = DEFAULT_TARGETS.deployMargin): number {
-  return Math.round((eur * (100 - deployMarginPct) / 100) / DEFAULT_JH_RATE * 10) / 10;
+  return Math.round((eur * (100 - deployMarginPct) / 100) / DEFAULT_JH_RATE);
 }
 
 /** RUN JH = RUN € * (100 - runMargin%) / 400 */
 export function runEurToJH(eur: number, runMarginPct: number = DEFAULT_TARGETS.runMargin): number {
-  return Math.round((eur * (100 - runMarginPct) / 100) / DEFAULT_JH_RATE * 10) / 10;
+  return Math.round((eur * (100 - runMarginPct) / 100) / DEFAULT_JH_RATE);
 }

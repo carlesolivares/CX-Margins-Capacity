@@ -613,7 +613,7 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                     {MONTH_KEYS.map(mk => (
                       <td key={mk} className="right"><input className="input input-table input-sm" type="number" min={0} value={ef[mk]} onChange={e => setEditForm({ ...ef, [mk]: Number(e.target.value) })} style={{ width: 42 }} /></td>
                     ))}
-                    <td className="right">{Math.round(efTotal * 10) / 10}</td>
+                    <td className="right">{Math.round(efTotal)}</td>
                     <td className="right"><input className="input input-table input-sm" type="number" min={0} value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} style={{ width: 60 }} /></td>
                     <td className="right">{formatCurrency(efTotal * ef.dailyRate)}</td>
                     <td className="actions-cell">
@@ -632,9 +632,9 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                   </td>
                   <td><span className="badge role-badge">{m.role}</span></td>
                   {MONTH_KEYS.map(mk => (
-                    <td key={mk} className="right">{Math.round(m[mk] * 10) / 10}</td>
+                    <td key={mk} className="right">{Math.round(m[mk])}</td>
                   ))}
-                  <td className="right">{Math.round(total * 10) / 10}</td>
+                  <td className="right">{Math.round(total)}</td>
                   <td className="right">{formatCurrency(m.dailyRate)}</td>
                   <td className="right">{formatCurrency(total * m.dailyRate)}</td>
                   <td className="actions-cell">
@@ -652,9 +652,9 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
               <td><strong>Total ({simTeam.length})</strong></td>
               <td></td>
               {MONTH_KEYS.map(mk => (
-                <td key={mk} className="right"><strong>{Math.round(simTeam.reduce((s, m) => s + m[mk], 0) * 10) / 10}</strong></td>
+                <td key={mk} className="right"><strong>{Math.round(simTeam.reduce((s, m) => s + m[mk], 0))}</strong></td>
               ))}
-              <td className="right"><strong>{Math.round(td * 10) / 10}</strong></td>
+              <td className="right"><strong>{Math.round(td)}</strong></td>
               <td className="right"><strong>{td > 0 ? formatCurrency(Math.round(totalCost / td)) : '\u2014'}</strong></td>
               <td className="right"><strong>{formatCurrency(totalCost)}</strong></td>
               <td></td>
@@ -781,7 +781,7 @@ function DemandCapacityChart({ demand, capacity, updateMonthLabel }: { demand: M
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis dataKey="month" tick={{ fontSize: 12 }} />
           <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
-          <Tooltip formatter={(value, name) => [`${Number(value).toFixed(1)} JH`, String(name) === 'Demand' ? 'Demand' : 'Capacity']} />
+          <Tooltip formatter={(value, name) => [`${Math.round(Number(value))} JH`, String(name) === 'Demand' ? 'Demand' : 'Capacity']} />
           <Legend />
           <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
           <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />

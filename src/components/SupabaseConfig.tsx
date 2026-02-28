@@ -15,7 +15,12 @@ export function SupabaseConfig() {
     if (!url.trim() || !key.trim()) return;
     setStatus('testing');
     setMessage('');
-    saveSupabaseConfig(url.trim(), key.trim());
+    let cleanUrl = url.trim();
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = 'https://' + cleanUrl;
+      setUrl(cleanUrl);
+    }
+    saveSupabaseConfig(cleanUrl, key.trim());
     try {
       const sb = getClient();
       if (!sb) throw new Error('Client not created');

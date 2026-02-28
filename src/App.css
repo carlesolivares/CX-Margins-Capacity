@@ -1801,7 +1801,31 @@ h4 {
 
 /* Monthly add member form */
 .add-member-monthly {
+  flex-wrap: nowrap;
   overflow-x: auto;
+}
+
+.add-member-monthly .input {
+  padding: 6px 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.add-member-monthly .input-sm {
+  width: 42px;
+  text-align: center;
+}
+
+.add-member-monthly .input-name {
+  width: 110px;
+}
+
+.add-member-monthly .input-role {
+  width: 70px;
+}
+
+.add-member-monthly .input-rate {
+  width: 56px;
 }
 
 @media (max-width: 768px) {

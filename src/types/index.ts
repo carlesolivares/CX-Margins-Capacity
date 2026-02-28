@@ -52,10 +52,10 @@ export function migrateTeamMember(m: Record<string, unknown>): TeamMember {
   const q2 = (m.q2Days as number) || 0;
   const q3 = (m.q3Days as number) || 0;
   const q4 = (m.q4Days as number) || 0;
-  const perQ1 = Math.round(q1 / 3 * 10) / 10;
-  const perQ2 = Math.round(q2 / 3 * 10) / 10;
-  const perQ3 = Math.round(q3 / 3 * 10) / 10;
-  const perQ4 = Math.round(q4 / 3 * 10) / 10;
+  const perQ1 = Math.round(q1 / 3);
+  const perQ2 = Math.round(q2 / 3);
+  const perQ3 = Math.round(q3 / 3);
+  const perQ4 = Math.round(q4 / 3);
   return {
     id: m.id as string,
     name: m.name as string,

@@ -31,8 +31,8 @@ export function KPICards({ margins, capacity, consumed, targets, totalDemandJH }
   const healthyRun = margins.filter(m => m.runRevenue > 0 && m.runHealthy).length;
   const totalWithRun = margins.filter(m => m.runRevenue > 0).length;
 
-  const demandJH = Math.round((totalDemandJH ?? (consumed.deployJH + consumed.runJH)) * 10) / 10;
-  const capacityDelta = Math.round((capacity.totalAvailableDays - demandJH) * 10) / 10;
+  const demandJH = Math.round(totalDemandJH ?? (consumed.deployJH + consumed.runJH));
+  const capacityDelta = Math.round(capacity.totalAvailableDays - demandJH);
 
   // Max cost to hit target margin
   const deployMaxCost = totalDeployRev * (1 - targets.deployMargin / 100);

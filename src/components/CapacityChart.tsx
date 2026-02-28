@@ -22,7 +22,7 @@ export function CapacityChart({ capacity, consumed }: CapacityChartProps) {
 
   const monthData = MONTH_LABELS_SHORT.map(label => ({
     month: label,
-    available: Math.round((capacity.byMonth[label] || 0) * 10) / 10,
+    available: Math.round(capacity.byMonth[label] || 0),
   }));
 
   if (roleData.length === 0) {
@@ -43,7 +43,7 @@ export function CapacityChart({ capacity, consumed }: CapacityChartProps) {
         </div>
         <div className="stat-card">
           <span className="stat-label">Remaining</span>
-          <span className="stat-value">{Math.round((capacity.totalAvailableDays - totalConsumedJH) * 10) / 10} JH</span>
+          <span className="stat-value">{Math.round(capacity.totalAvailableDays - totalConsumedJH)} JH</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Team Cost</span>
