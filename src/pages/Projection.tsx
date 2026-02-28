@@ -32,6 +32,15 @@ function dateToMonthLabel(iso: string | undefined): string | null {
   return m >= 1 && m <= 12 ? SHORT_MONTHS[m - 1] : null;
 }
 
+/** Classify a month key as actual or forecast relative to the update date */
+function monthCategory(monthLabel: string, updateDate?: string): 'actual' | 'forecast' | null {
+  if (!updateDate) return null;
+  const updateMonthIdx = Number(updateDate.split('-')[1]) - 1;
+  const monthIdx = SHORT_MONTHS.indexOf(monthLabel);
+  if (monthIdx < 0) return null;
+  return monthIdx <= updateMonthIdx ? 'actual' : 'forecast';
+}
+
 interface ProjectionProps {
   projects: ProjectRow[];
   members: TeamMember[];
@@ -286,6 +295,7 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
           aggregated={deploySim.aggregated}
           emptyMessage="No projects with valid kick-off and go-live dates and deploy revenue."
           updateMonthLabel={updateMonthLabel}
+          updateDate={updateDate}
         />
       )}
 
@@ -297,6 +307,7 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
           aggregated={runSim.aggregated}
           emptyMessage="No projects with valid go-live date and RUN revenue."
           updateMonthLabel={updateMonthLabel}
+          updateDate={updateDate}
         />
       )}
 
@@ -344,10 +355,11 @@ function aggregateMonthlyRows(perProject: ProjectMonthlyJH[], year: number = 202
   });
 }
 
-function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
+function MonthlyTable({ rows, title, updateDate }: { rows: MonthlyRow[]; title: string; updateDate?: string }) {
   const totals = new Array(12).fill(0);
   for (const r of rows) { for (let i = 0; i < 12; i++) totals[i] += r.months[i]; }
   const grandTotal = totals.reduce((s, v) => s + v, 0);
+  const fc = (i: number) => monthCategory(MONTH_SHORT[i], updateDate) === 'forecast' ? ' forecast-col' : '';
 
   return (
     <>
@@ -359,7 +371,7 @@ function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
               <th></th>
               <th>Account</th>
               <th>Project</th>
-              {MONTH_SHORT.map(m => <th key={m} className="right">{m}</th>)}
+              {MONTH_SHORT.map((m, i) => <th key={m} className={`right${fc(i)}`}>{m}</th>)}
               <th className="right">Total</th>
             </tr>
           </thead>
@@ -369,7 +381,7 @@ function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
                 <td><span className="color-dot" style={{ backgroundColor: row.color }} /></td>
                 <td className="customer-name">{row.account}</td>
                 <td>{row.project}</td>
-                {row.months.map((v, i) => <td key={i} className="right">{v > 0 ? v : '—'}</td>)}
+                {row.months.map((v, i) => <td key={i} className={`right${fc(i)}`}>{v > 0 ? v : '—'}</td>)}
                 <td className="right"><strong>{row.total}</strong></td>
               </tr>
             ))}
@@ -379,7 +391,7 @@ function MonthlyTable({ rows, title }: { rows: MonthlyRow[]; title: string }) {
               <td></td>
               <td><strong>Total ({rows.length})</strong></td>
               <td></td>
-              {totals.map((v, i) => <td key={i} className="right"><strong>{Math.round(v)}</strong></td>)}
+              {totals.map((v, i) => <td key={i} className={`right${fc(i)}`}><strong>{Math.round(v)}</strong></td>)}
               <td className="right"><strong>{Math.round(grandTotal)}</strong></td>
             </tr>
           </tfoot>
@@ -463,23 +475,36 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
   const chartData = useMemo(() => {
     let accumDemand = 0;
     let accumCapacity = 0;
+    let accumActual = 0;
+    let accumForecast = 0;
     return demand.map((d, i) => {
       const cap = capacity[i]?.total || 0;
+      const cat = monthCategory(d.label, updateDate);
+      const actual = cat === 'forecast' ? 0 : d.total;
+      const forecast = cat === 'forecast' ? d.total : 0;
       accumDemand += d.total;
       accumCapacity += cap;
+      accumActual += actual;
+      accumForecast += forecast;
       return {
         month: d.label,
         demand: d.total,
+        actualDemand: actual,
+        forecastDemand: forecast,
         capacity: cap,
         accumDemand: Math.round(accumDemand),
         accumCapacity: Math.round(accumCapacity),
+        accumActual: Math.round(accumActual),
+        accumForecast: Math.round(accumForecast),
       };
     });
-  }, [demand, capacity]);
+  }, [demand, capacity, updateDate]);
 
   const totalDemand = chartData.length > 0 ? chartData[chartData.length - 1].accumDemand : 0;
   const totalCapacity = chartData.length > 0 ? chartData[chartData.length - 1].accumCapacity : 0;
   const delta = totalCapacity - totalDemand;
+  const totalActual = chartData.reduce((s, d) => s + d.actualDemand, 0);
+  const totalForecast = chartData.reduce((s, d) => s + d.forecastDemand, 0);
 
   return (
     <>
@@ -490,6 +515,9 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Demand</span>
               <span className="projection-kpi-value">{Math.round(totalDemand)} JH</span>
+              {updateDate && (
+                <span className="projection-kpi-sub">{Math.round(totalActual)} actual + {Math.round(totalForecast)} forecast</span>
+              )}
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Capacity</span>
@@ -513,9 +541,27 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="month" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
-            <Tooltip formatter={(value, name) => [`${Math.round(Number(value))} JH`, name === 'demand' ? 'Demand' : 'Capacity']} />
+            <Tooltip
+              formatter={(value, name) => {
+                const v = Math.round(Number(value));
+                if (v === 0) return [null, null];
+                const label = name === 'actualDemand' ? 'Actual' : name === 'forecastDemand' ? 'Forecast' : name === 'demand' ? 'Demand' : 'Capacity';
+                return [`${v} JH`, label];
+              }}
+              labelFormatter={(label) => {
+                const cat = monthCategory(String(label), updateDate);
+                return cat ? `${label} (${cat === 'actual' ? 'Actual' : 'Forecast'})` : String(label);
+              }}
+            />
             <Legend />
-            <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            {updateDate ? (
+              <>
+                <Bar dataKey="actualDemand" name="Actual Demand" stackId="demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="forecastDemand" name="Forecast Demand" stackId="demand" fill="#fcd34d" radius={[4, 4, 0, 0]} />
+              </>
+            ) : (
+              <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            )}
             <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
             {updateMonthLabel && (
               <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
@@ -531,13 +577,33 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="month" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
-            <Tooltip formatter={(value, name) => [
-              `${Math.round(Number(value))} JH`,
-              name === 'accumDemand' ? 'Accumulated Demand' : 'Accumulated Capacity',
-            ]} />
+            <Tooltip
+              formatter={(value, name) => {
+                const v = Math.round(Number(value));
+                if (v === 0) return [null, null];
+                const labels: Record<string, string> = {
+                  accumCapacity: 'Accum. Capacity',
+                  accumActual: 'Accum. Actual Demand',
+                  accumForecast: 'Accum. Forecast Demand',
+                  accumDemand: 'Accum. Demand',
+                };
+                return [`${v} JH`, labels[name as string] || name];
+              }}
+              labelFormatter={(label) => {
+                const cat = monthCategory(String(label), updateDate);
+                return cat ? `${label} (${cat === 'actual' ? 'Actual' : 'Forecast'})` : String(label);
+              }}
+            />
             <Legend />
-            <Area dataKey="accumCapacity" name="Accumulated Capacity" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} />
-            <Area dataKey="accumDemand" name="Accumulated Demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+            <Area dataKey="accumCapacity" name="Accum. Capacity" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} />
+            {updateDate ? (
+              <>
+                <Area dataKey="accumActual" name="Accum. Actual Demand" stackId="demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+                <Area dataKey="accumForecast" name="Accum. Forecast Demand" stackId="demand" fill="#fef9c3" stroke="#fcd34d" strokeWidth={2} strokeDasharray="4 2" />
+              </>
+            ) : (
+              <Area dataKey="accumDemand" name="Accum. Demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+            )}
             {updateMonthLabel && (
               <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
             )}
@@ -552,7 +618,10 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
           <thead>
             <tr>
               <th></th>
-              {MONTH_SHORT.map(m => <th key={m} className="right">{m}</th>)}
+              {MONTH_SHORT.map(m => {
+                const fc = monthCategory(m, updateDate) === 'forecast';
+                return <th key={m} className={`right${fc ? ' forecast-col' : ''}`}>{m}</th>;
+              })}
               <th className="right">Total</th>
             </tr>
           </thead>
@@ -568,33 +637,34 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               const mDelta = mCap.map((c, i) => c - (mDemand[i] || 0));
               const fmt = (v: number) => String(Math.round(v));
               const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0);
+              const fc = (i: number) => monthCategory(MONTH_SHORT[i], updateDate) === 'forecast' ? ' forecast-col' : '';
 
               return (
                 <>
                   <tr>
                     <td><strong>Deploy Demand</strong></td>
-                    {mDeploy.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    {mDeploy.map((v, i) => <td key={i} className={`right${fc(i)}`}>{fmt(v)}</td>)}
                     <td className="right"><strong>{fmt(sum(mDeploy))}</strong></td>
                   </tr>
                   <tr>
                     <td><strong>RUN Demand</strong></td>
-                    {mRun.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    {mRun.map((v, i) => <td key={i} className={`right${fc(i)}`}>{fmt(v)}</td>)}
                     <td className="right"><strong>{fmt(sum(mRun))}</strong></td>
                   </tr>
                   <tr style={{ borderTop: '2px solid var(--color-border)' }}>
                     <td><strong>Total Demand</strong></td>
-                    {mDemand.map((v, i) => <td key={i} className="right"><strong>{fmt(v)}</strong></td>)}
+                    {mDemand.map((v, i) => <td key={i} className={`right${fc(i)}`}><strong>{fmt(v)}</strong></td>)}
                     <td className="right"><strong>{fmt(sum(mDemand))}</strong></td>
                   </tr>
                   <tr>
                     <td><strong>Capacity</strong></td>
-                    {mCap.map((v, i) => <td key={i} className="right">{fmt(v)}</td>)}
+                    {mCap.map((v, i) => <td key={i} className={`right${fc(i)}`}>{fmt(v)}</td>)}
                     <td className="right"><strong>{fmt(sum(mCap))}</strong></td>
                   </tr>
                   <tr style={{ borderTop: '2px solid var(--color-border)' }}>
                     <td><strong>Delta</strong></td>
                     {mDelta.map((v, i) => (
-                      <td key={i} className="right">
+                      <td key={i} className={`right${fc(i)}`}>
                         <span className={v >= 0 ? 'text-success' : 'text-danger'}>
                           <strong>{v >= 0 ? '+' : ''}{fmt(v)}</strong>
                         </span>
@@ -632,9 +702,13 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             {chartData.map(row => {
               const monthDelta = (capacity.find(c => c.label === row.month)?.total || 0) - row.demand;
               const accumDelta = row.accumCapacity - row.accumDemand;
+              const isForecast = monthCategory(row.month, updateDate) === 'forecast';
               return (
-                <tr key={row.month}>
-                  <td>{row.month}</td>
+                <tr key={row.month} className={isForecast ? 'forecast-row' : ''}>
+                  <td>
+                    {row.month}
+                    {isForecast && <span className="forecast-badge">Forecast</span>}
+                  </td>
                   <td className="right">{Math.round(row.demand)}</td>
                   <td className="right">{Math.round(row.capacity)}</td>
                   <td className="right">
@@ -848,9 +922,10 @@ interface DeployRunTabProps {
   aggregated: MonthlyAggregate[];
   emptyMessage: string;
   updateMonthLabel?: string | null;
+  updateDate?: string;
 }
 
-function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, updateMonthLabel }: DeployRunTabProps) {
+function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, updateMonthLabel, updateDate }: DeployRunTabProps) {
   if (perProject.length === 0) {
     return (
       <>
@@ -888,12 +963,23 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
             <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
             <Tooltip
               formatter={(value, name) => {
+                const v = Math.round(Number(value));
+                if (v === 0) return [null, null];
                 const entry = projectEntries.find(e => e.id === name);
-                return [`${Math.round(Number(value))} JH`, entry?.name || name];
+                return [`${v} JH`, entry?.name || name];
+              }}
+              labelFormatter={(label) => {
+                const cat = monthCategory(String(label), updateDate);
+                return cat ? `${label} (${cat === 'actual' ? 'Actual' : 'Forecast'})` : String(label);
               }}
             />
             {projectEntries.map(entry => (
-              <Bar key={entry.id} dataKey={entry.id} name={entry.id} stackId="projects" fill={entry.color} />
+              <Bar key={entry.id} dataKey={entry.id} name={entry.id} stackId="projects" fill={entry.color}>
+                {updateDate && chartData.map((_, idx) => {
+                  const isForecast = monthCategory(aggregated[idx]?.label, updateDate) === 'forecast';
+                  return <Cell key={idx} fillOpacity={isForecast ? 0.4 : 1} />;
+                })}
+              </Bar>
             ))}
             {updateMonthLabel && (
               <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />
@@ -902,7 +988,7 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
         </ResponsiveContainer>
       </div>
 
-      <MonthlyTable rows={aggregateMonthlyRows(perProject)} title="JH by Month" />
+      <MonthlyTable rows={aggregateMonthlyRows(perProject)} title="JH by Month" updateDate={updateDate} />
 
       <h3>Breakdown by Month</h3>
       <div className="table-wrapper">
@@ -912,9 +998,10 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
               <th></th>
               <th>Account</th>
               <th>Project</th>
-              {aggregated.map(a => (
-                <th key={a.month} className="right">{a.label}</th>
-              ))}
+              {aggregated.map(a => {
+                const fc = monthCategory(a.label, updateDate) === 'forecast';
+                return <th key={a.month} className={`right${fc ? ' forecast-col' : ''}`}>{a.label}</th>;
+              })}
               <th className="right">Total</th>
             </tr>
           </thead>
@@ -926,11 +1013,14 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
                   <td><span className="color-dot" style={{ backgroundColor: entry.color }} /></td>
                   <td className="customer-name">{pp.account}</td>
                   <td>{pp.project}</td>
-                  {aggregated.map(a => (
-                    <td key={a.month} className="right">
-                      {(pp.months[a.month] || 0) > 0 ? Math.round(pp.months[a.month]) : '—'}
-                    </td>
-                  ))}
+                  {aggregated.map(a => {
+                    const fc = monthCategory(a.label, updateDate) === 'forecast';
+                    return (
+                      <td key={a.month} className={`right${fc ? ' forecast-col' : ''}`}>
+                        {(pp.months[a.month] || 0) > 0 ? Math.round(pp.months[a.month]) : '—'}
+                      </td>
+                    );
+                  })}
                   <td className="right"><strong>{Math.round(entry.totalJH)}</strong></td>
                 </tr>
               );
@@ -941,9 +1031,10 @@ function DeployRunTab({ title, subtitle, perProject, aggregated, emptyMessage, u
               <td></td>
               <td><strong>Total</strong></td>
               <td></td>
-              {aggregated.map(a => (
-                <td key={a.month} className="right"><strong>{Math.round(a.total)}</strong></td>
-              ))}
+              {aggregated.map(a => {
+                const fc = monthCategory(a.label, updateDate) === 'forecast';
+                return <td key={a.month} className={`right${fc ? ' forecast-col' : ''}`}><strong>{Math.round(a.total)}</strong></td>;
+              })}
               <td className="right">
                 <strong>{Math.round(aggregated.reduce((s, a) => s + a.total, 0))}</strong>
               </td>
