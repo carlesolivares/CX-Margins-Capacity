@@ -148,7 +148,7 @@ export function Projection({ projects, members, targets, updateDate, revenueItem
         <h2 style={{ marginBottom: 0 }}>Projection</h2>
         {updateDate && (
           <div className="update-date-badge">
-            <span className="update-date-label">Data as of</span>
+            <span className="update-date-label">Import date</span>
             <span className="update-date-value">{updateDate}</span>
           </div>
         )}

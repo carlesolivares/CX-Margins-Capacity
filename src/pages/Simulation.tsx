@@ -3,17 +3,20 @@ import type { ProjectRow, TeamMember, Targets, Role, MonthField } from '../types
 import { ROLES, MONTH_KEYS, MONTH_LABELS_SHORT, totalDays as memberTotalDays } from '../types';
 import {
   formatCurrency,
+  isDeployComplete,
 } from '../utils/margins';
 import {
   computeTeamCapacityByMonth,
   computeTotalDemandByMonth,
+  computeProjections,
 } from '../utils/simulation';
-import type { MonthlyAggregate } from '../utils/simulation';
+import type { MonthlyAggregate, ProjectProjection } from '../utils/simulation';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line, ReferenceLine,
+  BarChart, Cell,
 } from 'recharts';
-import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download, TrendingUp } from 'lucide-react';
+import { RotateCcw, Users, Plus, Trash2, Edit2, Check, X, Zap, Save, Download, TrendingUp, BarChart3 } from 'lucide-react';
 
 const SHORT_MONTHS = MONTH_LABELS_SHORT;
 
@@ -59,7 +62,7 @@ interface SimulationProps {
   updateDate?: string;
 }
 
-type SimTab = 'capacity' | 'financial';
+type SimTab = 'capacity' | 'margins' | 'financial';
 
 export function Simulation({ projects, members, targets, updateDate }: SimulationProps) {
   const [simTab, setSimTab] = useState<SimTab>('capacity');
@@ -287,13 +290,32 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
     };
   }, [allProjects, simTeamAsMembers, members, demandByMonth]);
 
+  // Margin projections (same logic as Projection page but with simulated data)
+  const simProjections = useMemo(
+    () => computeProjections(allProjects, targets),
+    [allProjects, targets],
+  );
+
+  const deployProjections = useMemo(
+    () => simProjections.filter(p => {
+      const orig = allProjects.find(o => o.id === p.id);
+      return orig && !isDeployComplete(orig);
+    }),
+    [simProjections, allProjects],
+  );
+
+  const baseProjections = useMemo(
+    () => computeProjections(projects, targets),
+    [projects, targets],
+  );
+
   return (
     <div className="page">
       <div className="sim-header">
         <h2 style={{ marginBottom: 0 }}>Simulation</h2>
         {updateDate && (
           <div className="update-date-badge">
-            <span className="update-date-label">Data as of</span>
+            <span className="update-date-label">Import date</span>
             <span className="update-date-value">{updateDate}</span>
           </div>
         )}
@@ -306,6 +328,9 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
       <div className="proj-tabs" style={{ marginBottom: 16 }}>
         <button className={`sim-tab ${simTab === 'capacity' ? 'active' : ''}`} onClick={() => setSimTab('capacity')}>
           Capacity Planning
+        </button>
+        <button className={`sim-tab ${simTab === 'margins' ? 'active' : ''}`} onClick={() => setSimTab('margins')}>
+          <BarChart3 size={14} /> Margins
         </button>
         <button className={`sim-tab ${simTab === 'financial' ? 'active' : ''}`} onClick={() => setSimTab('financial')}>
           <TrendingUp size={14} /> Financial Summary
@@ -401,6 +426,18 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
             addMember={addSimMember}
           />
         </>
+      )}
+
+      {simTab === 'margins' && (
+        <SimMarginsDashboard
+          simProjections={simProjections}
+          baseProjections={baseProjections}
+          deployProjections={deployProjections}
+          allProjects={allProjects}
+          projects={projects}
+          targets={targets}
+          hasAnyChanges={hasAnyChanges}
+        />
       )}
 
       {simTab === 'financial' && (
@@ -538,6 +575,258 @@ function FinancialSummary({ data, hasTeamChanges, hasSimProjects }: { data: Fina
         </table>
       </div>
 
+    </>
+  );
+}
+
+function SimMarginsDashboard({ simProjections, baseProjections, deployProjections, allProjects, projects, targets, hasAnyChanges }: {
+  simProjections: ProjectProjection[];
+  baseProjections: ProjectProjection[];
+  deployProjections: ProjectProjection[];
+  allProjects: ProjectRow[];
+  projects: ProjectRow[];
+  targets: Targets;
+  hasAnyChanges: boolean;
+}) {
+  const phase1Ids = useMemo(() => {
+    const ids = new Set<string>();
+    allProjects.forEach(p => {
+      if (!isDeployComplete(p) && p.runRevenue > 0) ids.add(p.id);
+    });
+    return ids;
+  }, [allProjects]);
+
+  // Sim projections
+  const simDeployProjects = deployProjections.filter(p => p.deployRevenue > 0);
+  const simRunProjects = simProjections.filter(p => p.runRevenue > 0 && phase1Ids.has(p.id));
+
+  const simDeployRev = simDeployProjects.reduce((s, p) => s + p.deployRevenue, 0);
+  const simDeployProjected = simDeployProjects.reduce((s, p) => s + p.deployProjected, 0);
+  const simDeployMargin = simDeployRev > 0 ? Math.round(((simDeployRev - simDeployProjected) / simDeployRev) * 1000) / 10 : 0;
+  const simDeployHealthy = simDeployProjects.filter(p => p.deployMarginProjected >= targets.deployMargin).length;
+
+  const simRunRev = simRunProjects.reduce((s, p) => s + p.runRevenue, 0);
+  const simRunProjected = simRunProjects.reduce((s, p) => s + p.runProjected, 0);
+  const simRunMargin = simRunRev > 0 ? Math.round(((simRunRev - simRunProjected) / simRunRev) * 1000) / 10 : 0;
+  const simRunHealthy = simRunProjects.filter(p => p.runMarginProjected >= targets.runMargin).length;
+
+  // Combined global margin
+  const allMarginProjects = simProjections.filter(p => p.deployRevenue > 0 || p.runRevenue > 0);
+  const totalGlobalRev = simDeployRev + simRunRev;
+  const totalGlobalProjected = simDeployProjected + simRunProjected;
+  const combinedGlobalMargin = totalGlobalRev > 0 ? Math.round(((totalGlobalRev - totalGlobalProjected) / totalGlobalRev) * 1000) / 10 : 0;
+  const globalHealthyCount = allMarginProjects.filter(p => {
+    const rev = p.deployRevenue + p.runRevenue;
+    const cost = p.deployProjected + p.runProjected;
+    const margin = rev > 0 ? ((rev - cost) / rev) * 100 : 0;
+    return margin >= targets.globalMargin;
+  }).length;
+
+  // Baseline projections (for comparison)
+  const basePhase1Ids = useMemo(() => {
+    const ids = new Set<string>();
+    projects.forEach(p => {
+      if (!isDeployComplete(p) && p.runRevenue > 0) ids.add(p.id);
+    });
+    return ids;
+  }, [projects]);
+
+  const baseDeployProjects = baseProjections.filter(p => {
+    const orig = projects.find(o => o.id === p.id);
+    return orig && !isDeployComplete(orig) && p.deployRevenue > 0;
+  });
+  const baseRunProjects = baseProjections.filter(p => p.runRevenue > 0 && basePhase1Ids.has(p.id));
+  const baseDeployRev = baseDeployProjects.reduce((s, p) => s + p.deployRevenue, 0);
+  const baseDeployProjected = baseDeployProjects.reduce((s, p) => s + p.deployProjected, 0);
+  const baseDeployMargin = baseDeployRev > 0 ? Math.round(((baseDeployRev - baseDeployProjected) / baseDeployRev) * 1000) / 10 : 0;
+  const baseRunRev = baseRunProjects.reduce((s, p) => s + p.runRevenue, 0);
+  const baseRunProjected = baseRunProjects.reduce((s, p) => s + p.runProjected, 0);
+  const baseRunMargin = baseRunRev > 0 ? Math.round(((baseRunRev - baseRunProjected) / baseRunRev) * 1000) / 10 : 0;
+  const baseGlobalRev = baseDeployRev + baseRunRev;
+  const baseGlobalProjected = baseDeployProjected + baseRunProjected;
+  const baseGlobalMargin = baseGlobalRev > 0 ? Math.round(((baseGlobalRev - baseGlobalProjected) / baseGlobalRev) * 1000) / 10 : 0;
+
+  // Chart data for per-project global margin
+  const globalChartData = allMarginProjects
+    .map(p => {
+      const rev = p.deployRevenue + p.runRevenue;
+      const cost = p.deployProjected + p.runProjected;
+      const margin = rev > 0 ? Math.round(((rev - cost) / rev) * 1000) / 10 : 0;
+      return {
+        id: p.id,
+        name: p.account,
+        margin,
+        healthy: margin >= targets.globalMargin,
+      };
+    })
+    .sort((a, b) => b.margin - a.margin);
+
+  const marginDelta = (m1: number, m2: number) => {
+    const d = m1 - m2;
+    if (d === 0) return null;
+    return <span style={{ fontSize: 11, color: d >= 0 ? '#10b981' : '#ef4444', marginLeft: 6 }}>({d >= 0 ? '+' : ''}{d.toFixed(1)}pp vs baseline)</span>;
+  };
+
+  return (
+    <>
+      {/* Combined Global Margin Dashboard */}
+      <div className="projection-global" style={{ marginBottom: 8 }}>
+        <div className="projection-global-card" style={{ borderLeft: '4px solid #6366f1' }}>
+          <h4>Global &mdash; Combined Projected Margin {hasAnyChanges ? '(Simulated)' : '(Baseline)'}</h4>
+          <div className="projection-kpi-row">
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Total Revenue</span>
+              <span className="projection-kpi-value">{formatCurrency(totalGlobalRev)}</span>
+              <span className="projection-kpi-sub">Deploy: {formatCurrency(simDeployRev)} · RUN: {formatCurrency(simRunRev)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Total Projected Cost</span>
+              <span className="projection-kpi-value">{formatCurrency(totalGlobalProjected)}</span>
+              <span className="projection-kpi-sub">Deploy: {formatCurrency(simDeployProjected)} · RUN: {formatCurrency(simRunProjected)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Combined Margin</span>
+              <span className={`projection-kpi-value ${combinedGlobalMargin >= targets.globalMargin ? 'healthy' : combinedGlobalMargin >= 0 ? 'warning' : 'unhealthy'}`}>
+                {combinedGlobalMargin}%
+              </span>
+              <span className="projection-kpi-sub">
+                Target: {targets.globalMargin}% · Deploy: {simDeployMargin}% · RUN: {simRunMargin}%
+                {hasAnyChanges && marginDelta(combinedGlobalMargin, baseGlobalMargin)}
+              </span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projects</span>
+              <span className="projection-kpi-value">{allMarginProjects.length}</span>
+              <span className="projection-kpi-sub">{globalHealthyCount} healthy / {allMarginProjects.length - globalHealthyCount} at risk</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Deploy & RUN Margin Dashboard */}
+      <div className="projection-global">
+        <div className="projection-global-card">
+          <h4>Deploy &mdash; Projected Margin {hasAnyChanges ? '(Simulated)' : ''}</h4>
+          <div className="projection-kpi-row">
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Revenue</span>
+              <span className="projection-kpi-value">{formatCurrency(simDeployRev)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projected Cost</span>
+              <span className="projection-kpi-value">{formatCurrency(simDeployProjected)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projected Margin</span>
+              <span className={`projection-kpi-value ${simDeployMargin >= targets.deployMargin ? 'healthy' : simDeployMargin >= 0 ? 'warning' : 'unhealthy'}`}>
+                {simDeployMargin}%
+              </span>
+              <span className="projection-kpi-sub">
+                Target: {targets.deployMargin}%
+                {hasAnyChanges && marginDelta(simDeployMargin, baseDeployMargin)}
+              </span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projects</span>
+              <span className="projection-kpi-value">{simDeployProjects.length}</span>
+              <span className="projection-kpi-sub">{simDeployHealthy} healthy / {simDeployProjects.length - simDeployHealthy} at risk</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="projection-global-card">
+          <h4>RUN &mdash; Projected Margin {hasAnyChanges ? '(Simulated)' : ''}</h4>
+          <div className="projection-kpi-row">
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Revenue</span>
+              <span className="projection-kpi-value">{formatCurrency(simRunRev)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projected Cost</span>
+              <span className="projection-kpi-value">{formatCurrency(simRunProjected)}</span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projected Margin</span>
+              <span className={`projection-kpi-value ${simRunMargin >= targets.runMargin ? 'healthy' : simRunMargin >= 0 ? 'warning' : 'unhealthy'}`}>
+                {simRunMargin}%
+              </span>
+              <span className="projection-kpi-sub">
+                Target: {targets.runMargin}%
+                {hasAnyChanges && marginDelta(simRunMargin, baseRunMargin)}
+              </span>
+            </div>
+            <div className="projection-kpi">
+              <span className="projection-kpi-label">Projects</span>
+              <span className="projection-kpi-value">{simRunProjects.length}</span>
+              <span className="projection-kpi-sub">{simRunHealthy} healthy / {simRunProjects.length - simRunHealthy} at risk</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Global margin per-project chart */}
+      {globalChartData.length > 0 && (
+        <>
+          <h3>Global Margin by Project</h3>
+          <div className="chart-container chart-full-width">
+            <ResponsiveContainer width="100%" height={Math.max(300, globalChartData.length * 28)}>
+              <BarChart data={globalChartData} layout="vertical" margin={{ top: 5, right: 20, left: 140, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" tickFormatter={v => `${v}%`} tick={{ fontSize: 12 }} />
+                <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Projected Margin']} />
+                <ReferenceLine x={targets.globalMargin} stroke="#ef4444" strokeDasharray="4 4" label={{ value: `${targets.globalMargin}%`, position: 'top', fontSize: 11 }} />
+                <Bar dataKey="margin" radius={[0, 4, 4, 0]}>
+                  {globalChartData.map((entry, i) => (
+                    <Cell key={i} fill={entry.healthy ? '#10b981' : '#f59e0b'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {/* Detail table */}
+      <h3>Detail</h3>
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Project</th>
+              <th className="right">Deploy Revenue</th>
+              <th className="right">Deploy Projected</th>
+              <th className="right">Deploy Margin</th>
+              <th className="right">RUN Revenue</th>
+              <th className="right">RUN Projected</th>
+              <th className="right">RUN Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {simProjections.filter(p => p.deployRevenue > 0 || p.runRevenue > 0).map(p => (
+              <tr key={p.id}>
+                <td className="customer-name">{p.account}</td>
+                <td>{p.project}</td>
+                <td className="right">{formatCurrency(p.deployRevenue)}</td>
+                <td className="right">{formatCurrency(p.deployProjected)}</td>
+                <td className="right">
+                  <span className={`badge ${p.deployRevenue > 0 ? (p.deployMarginProjected >= targets.deployMargin ? 'healthy' : p.deployMarginProjected >= 0 ? 'warning' : 'unhealthy') : ''}`}>
+                    {p.deployRevenue > 0 ? `${p.deployMarginProjected}%` : '\u2014'}
+                  </span>
+                </td>
+                <td className="right">{formatCurrency(p.runRevenue)}</td>
+                <td className="right">{formatCurrency(p.runProjected)}</td>
+                <td className="right">
+                  <span className={`badge ${p.runRevenue > 0 ? (p.runMarginProjected >= targets.runMargin ? 'healthy' : p.runMarginProjected >= 0 ? 'warning' : 'unhealthy') : ''}`}>
+                    {p.runRevenue > 0 ? `${p.runMarginProjected}%` : '\u2014'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }
