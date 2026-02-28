@@ -334,7 +334,7 @@ export function Simulation({ projects, members, targets, updateDate }: Simulatio
               )}
             </div>
           </div>
-          <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} updateMonthLabel={dateToMonthLabel(updateDate)} />
+          <DemandCapacityChart demand={demandByMonth} capacity={capacityForChart} updateMonthLabel={dateToMonthLabel(updateDate)} updateDate={updateDate} />
 
           {/* Simulated Projects Section */}
           <div className="sim-header">
@@ -764,10 +764,26 @@ function AddSimProjectForm({ onAdd }: { onAdd: (sp: SimulatedProject) => void })
   );
 }
 
-function DemandCapacityChart({ demand, capacity, updateMonthLabel }: { demand: MonthlyAggregate[]; capacity: MonthlyAggregate[]; updateMonthLabel?: string | null }) {
+/** Classify a month label as actual or forecast relative to the update date */
+function monthCategory(monthLabel: string, updateDate?: string): 'actual' | 'forecast' | null {
+  if (!updateDate) return null;
+  const updateMonthIdx = Number(updateDate.split('-')[1]) - 1;
+  const monthIdx = SHORT_MONTHS.indexOf(monthLabel);
+  if (monthIdx < 0) return null;
+  return monthIdx <= updateMonthIdx ? 'actual' : 'forecast';
+}
+
+function DemandCapacityChart({ demand, capacity, updateMonthLabel, updateDate }: { demand: MonthlyAggregate[]; capacity: MonthlyAggregate[]; updateMonthLabel?: string | null; updateDate?: string }) {
   const chartData = demand.map(d => {
     const cAgg = capacity.find(a => a.month === d.month);
-    return { month: d.label, demand: d.total, capacity: cAgg?.total || 0 };
+    const cat = monthCategory(d.label, updateDate);
+    return {
+      month: d.label,
+      demand: d.total,
+      actualDemand: cat === 'forecast' ? 0 : d.total,
+      forecastDemand: cat === 'forecast' ? d.total : 0,
+      capacity: cAgg?.total || 0,
+    };
   });
 
   if (chartData.length === 0) {
@@ -781,9 +797,26 @@ function DemandCapacityChart({ demand, capacity, updateMonthLabel }: { demand: M
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis dataKey="month" tick={{ fontSize: 12 }} />
           <YAxis tickFormatter={v => `${v}`} tick={{ fontSize: 12 }} label={{ value: 'JH', angle: -90, position: 'insideLeft', fontSize: 12 }} />
-          <Tooltip formatter={(value, name) => [`${Math.round(Number(value))} JH`, String(name) === 'Demand' ? 'Demand' : 'Capacity']} />
+          <Tooltip
+            formatter={(value, name) => {
+              const v = Math.round(Number(value));
+              if (v === 0) return [null, null];
+              return [`${v} JH`, name];
+            }}
+            labelFormatter={(label) => {
+              const cat = monthCategory(String(label), updateDate);
+              return cat ? `${label} (${cat === 'actual' ? 'Actual' : 'Forecast'})` : String(label);
+            }}
+          />
           <Legend />
-          <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+          {updateDate ? (
+            <>
+              <Bar dataKey="actualDemand" name="Consumption" stackId="demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="forecastDemand" name="Forecast" stackId="demand" fill="#fcd34d" radius={[4, 4, 0, 0]} />
+            </>
+          ) : (
+            <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+          )}
           <Line dataKey="capacity" name="Capacity" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
           {updateMonthLabel && (
             <ReferenceLine x={updateMonthLabel} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" label={{ value: 'Update date', position: 'top', fontSize: 11, fill: '#ef4444' }} />

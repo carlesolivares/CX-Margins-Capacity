@@ -516,7 +516,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               <span className="projection-kpi-label">Total Demand</span>
               <span className="projection-kpi-value">{Math.round(totalDemand)} JH</span>
               {updateDate && (
-                <span className="projection-kpi-sub">{Math.round(totalActual)} actual + {Math.round(totalForecast)} forecast</span>
+                <span className="projection-kpi-sub">{Math.round(totalActual)} consumption + {Math.round(totalForecast)} forecast</span>
               )}
             </div>
             <div className="projection-kpi">
@@ -545,8 +545,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               formatter={(value, name) => {
                 const v = Math.round(Number(value));
                 if (v === 0) return [null, null];
-                const label = name === 'actualDemand' ? 'Actual' : name === 'forecastDemand' ? 'Forecast' : name === 'demand' ? 'Demand' : 'Capacity';
-                return [`${v} JH`, label];
+                return [`${v} JH`, name];
               }}
               labelFormatter={(label) => {
                 const cat = monthCategory(String(label), updateDate);
@@ -556,8 +555,8 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <Legend />
             {updateDate ? (
               <>
-                <Bar dataKey="actualDemand" name="Actual Demand" stackId="demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="forecastDemand" name="Forecast Demand" stackId="demand" fill="#fcd34d" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="actualDemand" name="Consumption" stackId="demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="forecastDemand" name="Forecast" stackId="demand" fill="#fcd34d" radius={[4, 4, 0, 0]} />
               </>
             ) : (
               <Bar dataKey="demand" name="Demand" fill="#f59e0b" radius={[4, 4, 0, 0]} />
@@ -581,13 +580,7 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
               formatter={(value, name) => {
                 const v = Math.round(Number(value));
                 if (v === 0) return [null, null];
-                const labels: Record<string, string> = {
-                  accumCapacity: 'Accum. Capacity',
-                  accumActual: 'Accum. Actual Demand',
-                  accumForecast: 'Accum. Forecast Demand',
-                  accumDemand: 'Accum. Demand',
-                };
-                return [`${v} JH`, labels[name as string] || name];
+                return [`${v} JH`, name];
               }}
               labelFormatter={(label) => {
                 const cat = monthCategory(String(label), updateDate);
@@ -598,8 +591,8 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
             <Area dataKey="accumCapacity" name="Accum. Capacity" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} />
             {updateDate ? (
               <>
-                <Area dataKey="accumActual" name="Accum. Actual Demand" stackId="demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
-                <Area dataKey="accumForecast" name="Accum. Forecast Demand" stackId="demand" fill="#fef9c3" stroke="#fcd34d" strokeWidth={2} strokeDasharray="4 2" />
+                <Area dataKey="accumActual" name="Accum. Consumption" stackId="demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
+                <Area dataKey="accumForecast" name="Accum. Forecast" stackId="demand" fill="#fef9c3" stroke="#fcd34d" strokeWidth={2} strokeDasharray="4 2" />
               </>
             ) : (
               <Area dataKey="accumDemand" name="Accum. Demand" fill="#fef3c7" stroke="#f59e0b" strokeWidth={2} />
