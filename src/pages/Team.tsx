@@ -319,7 +319,7 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                       {MONTH_KEYS.map(mk => (
                         <td key={mk}><input className="input input-table input-sm" type="number" value={ef[mk]} onChange={e => setEditForm({ ...ef, [mk]: Number(e.target.value) })} /></td>
                       ))}
-                      <td className="right">{efTotal}</td>
+                      <td className="right">{Math.round(efTotal * 10) / 10}</td>
                       <td><input className="input input-table input-sm" type="number" value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} /></td>
                       <td className="right">{formatCurrency(efTotal * ef.dailyRate)}</td>
                       <td className="actions-cell">
@@ -335,9 +335,9 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                     <td className="customer-name">{m.name}</td>
                     <td><span className="badge role-badge">{m.role}</span></td>
                     {MONTH_KEYS.map(mk => (
-                      <td key={mk} className="right">{m[mk]}</td>
+                      <td key={mk} className="right">{Math.round(m[mk] * 10) / 10}</td>
                     ))}
-                    <td className="right"><strong>{m.totalDays}</strong></td>
+                    <td className="right"><strong>{Math.round(m.totalDays * 10) / 10}</strong></td>
                     <td className="right">{formatCurrency(m.dailyRate)}</td>
                     <td className="right">{formatCurrency(m.totalCost)}</td>
                     <td className="actions-cell">
@@ -355,7 +355,7 @@ function TeamTable({ members, editingId, editForm, setEditForm, startEdit, cance
                 {MONTH_KEYS.map(mk => (
                   <td key={mk} className="right"><strong>{Math.round(members.reduce((s, m) => s + m[mk], 0) * 10) / 10}</strong></td>
                 ))}
-                <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0)}</strong></td>
+                <td className="right"><strong>{Math.round(enriched.reduce((s, m) => s + m.totalDays, 0) * 10) / 10}</strong></td>
                 <td className="right"><strong>{enriched.reduce((s, m) => s + m.totalDays, 0) > 0 ? formatCurrency(Math.round(enriched.reduce((s, m) => s + m.totalCost, 0) / enriched.reduce((s, m) => s + m.totalDays, 0))) : '\u2014'}</strong></td>
                 <td className="right"><strong>{formatCurrency(enriched.reduce((s, m) => s + m.totalCost, 0))}</strong></td>
                 <td></td>

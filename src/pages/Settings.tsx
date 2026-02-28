@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import type { Targets, ProjectRow } from '../types';
 import { DEFAULT_TARGETS } from '../types';
 import type { ProjectToggle } from '../store/useStore';
-import { Settings as SettingsIcon, RotateCcw, Info, Filter } from 'lucide-react';
+import { Settings as SettingsIcon, RotateCcw, Info, Filter, Database } from 'lucide-react';
+import { SupabaseConfig } from '../components/SupabaseConfig';
 
 interface SettingsProps {
   targets: Targets;
@@ -154,6 +155,15 @@ export function Settings({ targets, updateTargets, projects = [], getToggle, set
         </div>
       )}
 
+      {/* Database */}
+      <div className="settings-section" style={{ marginTop: 24 }}>
+        <h3><Database size={18} /> Database (Supabase)</h3>
+        <p className="settings-desc">
+          Connect to a Supabase project to persist data in the cloud. Without a connection, data is stored in browser localStorage only.
+        </p>
+        <SupabaseConfig />
+      </div>
+
       {/* Assumptions section */}
       <div className="settings-section" style={{ marginTop: 24 }}>
         <h3><Info size={18} /> Assumptions</h3>
@@ -203,11 +213,11 @@ export function Settings({ targets, updateTargets, projects = [], getToggle, set
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Team Capacity</span>
-            <span className="assumption-desc">Quarterly days per team member are split evenly across the 3 months of each quarter (Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec).</span>
+            <span className="assumption-desc">Monthly available days per team member (Jan–Dec). Each member has an individual daily rate used for cost calculations.</span>
           </div>
           <div className="assumption-item">
             <span className="assumption-title">Simulation Financial Summary</span>
-            <span className="assumption-desc">Margin forecast uses simulated team cost (quarterly days &times; daily rate) as consumption, compared against project revenue. Simulated projects are included in the forecast.</span>
+            <span className="assumption-desc">Margin forecast uses simulated team cost (monthly days &times; daily rate) as consumption, compared against project revenue. Simulated projects are included in the forecast.</span>
           </div>
         </div>
       </div>

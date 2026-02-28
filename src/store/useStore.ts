@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ProjectRow, TeamMember, Targets } from '../types';
 import { DEFAULT_TARGETS, migrateTeamMember } from '../types';
 import type { RevenueLineItem } from '../utils/fileParser';
+import { loadFromDB, saveToDB, isSupabaseConfigured } from '../lib/supabase';
 
 const PROJECTS_KEY = 'cx-app-projects-v2';
 const TEAM_KEY = 'cx-app-team';
@@ -22,6 +23,8 @@ export interface ProjectToggle {
   run: boolean;
 }
 
+/* ── localStorage helpers (unchanged) ── */
+
 function load<T>(key: string): T[] {
   try {
     const raw = localStorage.getItem(key);
@@ -31,14 +34,60 @@ function load<T>(key: string): T[] {
   }
 }
 
-function save<T>(key: string, data: T[]) {
+function loadObj<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function save<T>(key: string, data: T) {
   localStorage.setItem(key, JSON.stringify(data));
 }
+
+/* ── Hybrid save: localStorage + Supabase ── */
+
+function usePersist<T>(key: string, data: T, skip?: boolean) {
+  const didSync = useRef(false);
+
+  useEffect(() => {
+    if (skip) return;
+    save(key, data);
+    if (isSupabaseConfigured()) {
+      saveToDB(key, data);
+    }
+  }, [key, data, skip]);
+
+  return didSync;
+}
+
+/** Sync from Supabase on mount; returns true once done. */
+function useCloudSync<T>(
+  key: string,
+  setter: (v: T) => void,
+  transform?: (v: T) => T,
+) {
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || !isSupabaseConfigured()) return;
+    synced.current = true;
+    loadFromDB<T>(key).then(val => {
+      if (val != null) {
+        setter(transform ? transform(val) : val);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/* ── Hooks ── */
 
 export function useProjectData() {
   const [projects, setProjects] = useState<ProjectRow[]>(() => load<ProjectRow>(PROJECTS_KEY));
 
-  useEffect(() => { save(PROJECTS_KEY, projects); }, [projects]);
+  usePersist(PROJECTS_KEY, projects);
+  useCloudSync<ProjectRow[]>(PROJECTS_KEY, setProjects);
 
   const importProjects = useCallback((rows: ProjectRow[]) => {
     setProjects(rows);
@@ -62,7 +111,10 @@ export function useTeamMembers() {
     load<Record<string, unknown>>(TEAM_KEY).map(migrateTeamMember)
   );
 
-  useEffect(() => { save(TEAM_KEY, members); }, [members]);
+  usePersist(TEAM_KEY, members);
+  useCloudSync<TeamMember[]>(TEAM_KEY, setMembers, arr =>
+    (arr as unknown as Record<string, unknown>[]).map(migrateTeamMember)
+  );
 
   const addMember = useCallback((member: TeamMember) => {
     setMembers(prev => [...prev, member]);
@@ -84,18 +136,12 @@ export function useTeamMembers() {
 }
 
 export function useTargets() {
-  const [targets, setTargets] = useState<Targets>(() => {
-    try {
-      const raw = localStorage.getItem(TARGETS_KEY);
-      return raw ? { ...DEFAULT_TARGETS, ...JSON.parse(raw) } : DEFAULT_TARGETS;
-    } catch {
-      return DEFAULT_TARGETS;
-    }
-  });
+  const [targets, setTargets] = useState<Targets>(() =>
+    loadObj<Targets>(TARGETS_KEY, DEFAULT_TARGETS)
+  );
 
-  useEffect(() => {
-    localStorage.setItem(TARGETS_KEY, JSON.stringify(targets));
-  }, [targets]);
+  usePersist(TARGETS_KEY, targets);
+  useCloudSync<Targets>(TARGETS_KEY, setTargets, v => ({ ...DEFAULT_TARGETS, ...v }));
 
   const updateTargets = useCallback((updated: Targets) => {
     setTargets(updated);
@@ -105,18 +151,12 @@ export function useTargets() {
 }
 
 export function useProjectToggles(projects: ProjectRow[]) {
-  const [toggles, setToggles] = useState<Record<string, ProjectToggle>>(() => {
-    try {
-      const raw = localStorage.getItem(TOGGLES_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [toggles, setToggles] = useState<Record<string, ProjectToggle>>(() =>
+    loadObj<Record<string, ProjectToggle>>(TOGGLES_KEY, {})
+  );
 
-  useEffect(() => {
-    localStorage.setItem(TOGGLES_KEY, JSON.stringify(toggles));
-  }, [toggles]);
+  usePersist(TOGGLES_KEY, toggles);
+  useCloudSync<Record<string, ProjectToggle>>(TOGGLES_KEY, setToggles);
 
   const setToggle = useCallback((id: string, toggle: ProjectToggle) => {
     setToggles(prev => ({ ...prev, [id]: toggle }));
@@ -126,7 +166,6 @@ export function useProjectToggles(projects: ProjectRow[]) {
     return toggles[id] ?? { deploy: true, run: true };
   }, [toggles]);
 
-  // Projects with toggled-off revenue/conso zeroed out
   const filteredProjects = useMemo(() => {
     return projects.map(p => {
       const t = toggles[p.id] ?? { deploy: true, run: true };
@@ -144,18 +183,12 @@ export function useProjectToggles(projects: ProjectRow[]) {
 }
 
 export function useRevenueData() {
-  const [revenueItems, setRevenueItems] = useState<RevenueLineItem[]>(() => {
-    try {
-      const raw = localStorage.getItem(REVENUE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [revenueItems, setRevenueItems] = useState<RevenueLineItem[]>(() =>
+    loadObj<RevenueLineItem[]>(REVENUE_KEY, [])
+  );
 
-  useEffect(() => {
-    localStorage.setItem(REVENUE_KEY, JSON.stringify(revenueItems));
-  }, [revenueItems]);
+  usePersist(REVENUE_KEY, revenueItems);
+  useCloudSync<RevenueLineItem[]>(REVENUE_KEY, setRevenueItems);
 
   const importRevenue = useCallback((items: RevenueLineItem[]) => {
     setRevenueItems(items);
@@ -175,9 +208,8 @@ export function useProjectUpdateDate() {
     }
   });
 
-  useEffect(() => {
-    localStorage.setItem(UPDATE_DATE_KEY, updateDate);
-  }, [updateDate]);
+  usePersist(UPDATE_DATE_KEY, updateDate);
+  useCloudSync<string>(UPDATE_DATE_KEY, setUpdateDate);
 
   const setToToday = useCallback(() => {
     const today = new Date();
@@ -200,9 +232,10 @@ export function useSavedTeams() {
     }
   });
 
-  useEffect(() => {
-    localStorage.setItem(SAVED_TEAMS_KEY, JSON.stringify(savedTeams));
-  }, [savedTeams]);
+  usePersist(SAVED_TEAMS_KEY, savedTeams);
+  useCloudSync<SavedTeam[]>(SAVED_TEAMS_KEY, setSavedTeams, arr =>
+    arr.map(t => ({ ...t, members: t.members.map(m => migrateTeamMember(m as unknown as Record<string, unknown>)) }))
+  );
 
   const saveTeam = useCallback((name: string, members: TeamMember[]) => {
     setSavedTeams(prev => {

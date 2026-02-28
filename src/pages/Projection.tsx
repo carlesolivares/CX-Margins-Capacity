@@ -489,16 +489,16 @@ function DemandCapacityTab({ projects, members, targets, updateDate, updateMonth
           <div className="projection-kpi-row">
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Demand</span>
-              <span className="projection-kpi-value">{Math.round(totalDemand)} JH</span>
+              <span className="projection-kpi-value">{(Math.round(totalDemand * 10) / 10).toFixed(1)} JH</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Total Capacity</span>
-              <span className="projection-kpi-value">{Math.round(totalCapacity)} JH</span>
+              <span className="projection-kpi-value">{(Math.round(totalCapacity * 10) / 10).toFixed(1)} JH</span>
             </div>
             <div className="projection-kpi">
               <span className="projection-kpi-label">Delta</span>
               <span className={`projection-kpi-value ${delta >= 0 ? 'healthy' : 'unhealthy'}`}>
-                {delta >= 0 ? '+' : ''}{Math.round(delta)} JH
+                {delta >= 0 ? '+' : ''}{(Math.round(delta * 10) / 10).toFixed(1)} JH
               </span>
               <span className="projection-kpi-sub">{delta >= 0 ? 'Surplus' : 'Deficit'}</span>
             </div>

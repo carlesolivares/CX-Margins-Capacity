@@ -107,7 +107,14 @@ export function calculateTeamCapacity(members: TeamMember[]): TeamCapacity {
     totalCost += cost;
   }
 
-  return { totalAvailableDays, totalConsumedDays: 0, totalCost, byRole, byMonth };
+  // Round all day values to 1 decimal
+  for (const role of ROLES) {
+    byRole[role].days = Math.round(byRole[role].days * 10) / 10;
+  }
+  for (const label of MONTH_LABELS_SHORT) {
+    byMonth[label] = Math.round(byMonth[label] * 10) / 10;
+  }
+  return { totalAvailableDays: Math.round(totalAvailableDays * 10) / 10, totalConsumedDays: 0, totalCost, byRole, byMonth };
 }
 
 /** Get consumed conso in EUR and converted to JH for display */

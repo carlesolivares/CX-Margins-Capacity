@@ -613,7 +613,7 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                     {MONTH_KEYS.map(mk => (
                       <td key={mk} className="right"><input className="input input-table input-sm" type="number" min={0} value={ef[mk]} onChange={e => setEditForm({ ...ef, [mk]: Number(e.target.value) })} style={{ width: 42 }} /></td>
                     ))}
-                    <td className="right">{efTotal}</td>
+                    <td className="right">{Math.round(efTotal * 10) / 10}</td>
                     <td className="right"><input className="input input-table input-sm" type="number" min={0} value={ef.dailyRate} onChange={e => setEditForm({ ...ef, dailyRate: Number(e.target.value) })} style={{ width: 60 }} /></td>
                     <td className="right">{formatCurrency(efTotal * ef.dailyRate)}</td>
                     <td className="actions-cell">
@@ -632,9 +632,9 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
                   </td>
                   <td><span className="badge role-badge">{m.role}</span></td>
                   {MONTH_KEYS.map(mk => (
-                    <td key={mk} className="right">{m[mk]}</td>
+                    <td key={mk} className="right">{Math.round(m[mk] * 10) / 10}</td>
                   ))}
-                  <td className="right">{total}</td>
+                  <td className="right">{Math.round(total * 10) / 10}</td>
                   <td className="right">{formatCurrency(m.dailyRate)}</td>
                   <td className="right">{formatCurrency(total * m.dailyRate)}</td>
                   <td className="actions-cell">
@@ -654,7 +654,7 @@ function SimTeamTable({ simTeam, updateMember, removeMember, addMember }: {
               {MONTH_KEYS.map(mk => (
                 <td key={mk} className="right"><strong>{Math.round(simTeam.reduce((s, m) => s + m[mk], 0) * 10) / 10}</strong></td>
               ))}
-              <td className="right"><strong>{td}</strong></td>
+              <td className="right"><strong>{Math.round(td * 10) / 10}</strong></td>
               <td className="right"><strong>{td > 0 ? formatCurrency(Math.round(totalCost / td)) : '\u2014'}</strong></td>
               <td className="right"><strong>{formatCurrency(totalCost)}</strong></td>
               <td></td>

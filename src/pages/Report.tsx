@@ -82,9 +82,9 @@ export function Report({ projects, members, targets }: ReportProps) {
     });
 
     return {
-      totalDemand: Math.round(totalDemand),
-      totalCapacity: Math.round(totalCapacity),
-      delta: Math.round(totalCapacity - totalDemand),
+      totalDemand: Math.round(totalDemand * 10) / 10,
+      totalCapacity: Math.round(totalCapacity * 10) / 10,
+      delta: Math.round((totalCapacity - totalDemand) * 10) / 10,
       deficits,
     };
   }, [projects, members, targets]);
