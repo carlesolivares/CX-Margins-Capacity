@@ -147,6 +147,7 @@ export function computeDeploySimulation(
 ): { perProject: ProjectMonthlyJH[]; aggregated: MonthlyAggregate[] } {
   const perProject: ProjectMonthlyJH[] = [];
   const splitDate = updateDate ? parseDate(updateDate) : null;
+  const yearStart = new Date(2026, 0, 1);
 
   for (const p of projects) {
     const start = parseDate(p.kickOff);
@@ -161,9 +162,10 @@ export function computeDeploySimulation(
       const consoJH = eurToJH(p.deployConso);
       const remainingJH = Math.max(0, budgetJH - consoJH);
 
-      // Past: spread consumed JH from kickOff → updateDate
+      // Past: spread consumed JH only within 2026 (clamp start to Jan 1)
+      const pastStart = start < yearStart ? yearStart : start;
       const pastEnd = splitDate < end ? splitDate : end;
-      const pastMonths = spreadByMonth(consoJH, start, pastEnd);
+      const pastMonths = spreadByMonth(consoJH, pastStart, pastEnd);
 
       // Future: spread remaining JH from updateDate → goLive
       if (splitDate < end && remainingJH > 0) {
