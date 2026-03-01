@@ -1124,6 +1124,47 @@ h4 {
   transition: max-height 0.3s ease;
 }
 
+/* Margin collapsible groups */
+.margin-group {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 4px 16px 4px 16px;
+  margin-bottom: 12px;
+  background: var(--color-surface, #fff);
+}
+
+.margin-group > .collapsible-header {
+  padding: 10px 0;
+  margin-bottom: 0;
+}
+
+.margin-group > .collapsible-content {
+  padding-bottom: 12px;
+}
+
+.margin-group-badge {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+.margin-group-badge.healthy {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.margin-group-badge.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.margin-group-badge.unhealthy {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 /* Projection badges */
 .badge.healthy {
   background: #dcfce7;

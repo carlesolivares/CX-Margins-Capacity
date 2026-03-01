@@ -202,7 +202,17 @@ export function useRevenueData() {
 export function useProjectUpdateDate() {
   const [updateDate, setUpdateDate] = useState<string>(() => {
     try {
-      return localStorage.getItem(UPDATE_DATE_KEY) || '';
+      const raw = localStorage.getItem(UPDATE_DATE_KEY);
+      if (!raw) return '';
+      // Unwrap any layers of JSON-stringification to recover a clean ISO date
+      let val: unknown = raw;
+      for (let i = 0; i < 10; i++) {
+        if (typeof val !== 'string') break;
+        try { val = JSON.parse(val); } catch { break; }
+      }
+      // Validate that we got a clean ISO date string
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+      return '';
     } catch {
       return '';
     }
